@@ -1,0 +1,815 @@
+<title>NVIDIA GPU Sharing on K8s</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* layout: sticky sidebar TOC on wide, linear on mobile */
+  :root {
+    --bg:       #f7f8fa;
+    --surface:  #ffffff;
+    --border:   #e2e5ea;
+    --fg:       #1a1d23;
+    --fg-muted: #5a6270;
+    --accent:   #76b900;   /* NVIDIA green */
+    --accent-dim: #5a8d00;
+    --code-bg:  #1a1d23;
+    --code-fg:  #e6edf3;
+    --tag-bg:   #edf7d6;
+    --tag-fg:   #3a5c00;
+    --warn-bg:  #fff8e6;
+    --warn-fg:  #7a4f00;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:       #0d0f13;
+      --surface:  #161921;
+      --border:   #2a2f3a;
+      --fg:       #e6edf3;
+      --fg-muted: #8b9299;
+      --accent:   #76b900;
+      --accent-dim: #96d900;
+      --code-bg:  #0a0c10;
+      --code-fg:  #e6edf3;
+      --tag-bg:   #1a2a00;
+      --tag-fg:   #a8e050;
+      --warn-bg:  #1a1500;
+      --warn-fg:  #d4a840;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:       #0d0f13;
+    --surface:  #161921;
+    --border:   #2a2f3a;
+    --fg:       #e6edf3;
+    --fg-muted: #8b9299;
+    --accent:   #76b900;
+    --accent-dim: #96d900;
+    --code-bg:  #0a0c10;
+    --code-fg:  #e6edf3;
+    --tag-bg:   #1a2a00;
+    --tag-fg:   #a8e050;
+    --warn-bg:  #1a1500;
+    --warn-fg:  #d4a840;
+    color-scheme: dark;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+  }
+
+  /* ── top bar ── */
+  .topbar {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 100;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 24px;
+    height: 52px;
+  }
+  .topbar-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .03em;
+    color: var(--fg);
+    text-decoration: none;
+  }
+  .topbar-logo svg { flex-shrink: 0; }
+  .topbar-divider { width: 1px; height: 20px; background: var(--border); }
+  .topbar-title { font-size: 13px; color: var(--fg-muted); font-weight: 400; }
+  .topbar-spacer { flex: 1; }
+  .theme-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg-muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 13px;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .theme-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── layout shell ── */
+  .shell {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    max-width: 1100px;
+    margin: 0 auto;
+    gap: 0;
+  }
+  @media (max-width: 760px) {
+    .shell { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+  }
+
+  /* ── sidebar ── */
+  .sidebar {
+    position: sticky;
+    top: calc(52px + env(safe-area-inset-top, 0px));
+    height: calc(100vh - 52px - env(safe-area-inset-top, 0px));
+    overflow-y: auto;
+    padding: 28px 16px 28px 24px;
+    border-right: 1px solid var(--border);
+  }
+  .toc-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+    margin-bottom: 12px;
+  }
+  .toc-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+  .toc-list a {
+    display: block;
+    font-size: 12.5px;
+    color: var(--fg-muted);
+    text-decoration: none;
+    padding: 4px 8px;
+    border-radius: 5px;
+    line-height: 1.4;
+    transition: color .15s, background .15s;
+  }
+  .toc-list a:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .toc-list a.active { color: var(--accent); font-weight: 500; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .toc-sub { padding-left: 12px; }
+  .toc-sub a { font-size: 12px; }
+
+  /* ── main content ── */
+  .content {
+    padding: 40px 48px 80px 48px;
+    min-width: 0;
+  }
+  @media (max-width: 760px) {
+    .content { padding: 24px 16px 60px; }
+  }
+
+  /* ── page header ── */
+  .page-header { margin-bottom: 40px; }
+  .page-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+  .page-header h1 {
+    font-size: clamp(22px, 4vw, 30px);
+    font-weight: 600;
+    line-height: 1.2;
+    text-wrap: balance;
+    color: var(--fg);
+    margin-bottom: 10px;
+  }
+  .page-meta { font-size: 13px; color: var(--fg-muted); display: flex; gap: 16px; flex-wrap: wrap; }
+  .page-meta a { color: var(--accent); text-decoration: none; }
+  .page-meta a:hover { text-decoration: underline; }
+
+  /* ── sections ── */
+  .section { margin-bottom: 52px; scroll-margin-top: 72px; }
+  .section h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--fg);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section h2 .sec-num {
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border-radius: 4px;
+    padding: 2px 6px;
+    letter-spacing: .04em;
+  }
+  .section h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--fg);
+    margin: 24px 0 10px;
+    letter-spacing: .01em;
+  }
+  .section p { margin-bottom: 12px; color: var(--fg); }
+  .section p:last-child { margin-bottom: 0; }
+
+  /* ── mechanism cards (top table as cards) ── */
+  .mech-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 8px; }
+  @media (max-width: 640px) { .mech-grid { grid-template-columns: 1fr; } }
+  .mech-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .mech-card:hover { border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .mech-name { font-size: 14px; font-weight: 600; color: var(--fg); }
+  .mech-hw {
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+    background: var(--tag-bg);
+    color: var(--tag-fg);
+    border-radius: 4px;
+    padding: 2px 7px;
+    align-self: flex-start;
+  }
+  .mech-iso { font-size: 12px; color: var(--fg-muted); }
+  .mech-iso strong { color: var(--fg); font-weight: 500; }
+  .mech-use { font-size: 12px; color: var(--fg-muted); border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
+
+  /* ── caveat boxes ── */
+  .caveat {
+    background: var(--warn-bg);
+    border-left: 3px solid #e6a817;
+    border-radius: 0 6px 6px 0;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--warn-fg);
+    margin: 12px 0;
+  }
+
+  /* ── code blocks ── */
+  .code-wrap {
+    background: var(--code-bg);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 14px 0;
+    border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  }
+  .code-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 14px;
+    background: color-mix(in srgb, white 4%, var(--code-bg));
+    border-bottom: 1px solid color-mix(in srgb, white 8%, var(--code-bg));
+  }
+  .code-lang { font-size: 11px; font-family: 'IBM Plex Mono', monospace; color: #8b9299; letter-spacing: .04em; }
+  .copy-btn {
+    background: none;
+    border: 1px solid #2a2f3a;
+    border-radius: 4px;
+    color: #8b9299;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+    padding: 2px 8px;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .copy-btn.copied { color: var(--accent); border-color: var(--accent); }
+  pre {
+    overflow-x: auto;
+    padding: 16px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--code-fg);
+    margin: 0;
+  }
+  code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+    color: var(--accent-dim);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+
+  /* code coloring */
+  .kw  { color: #c792ea; }
+  .str { color: #a8e050; }
+  .cmt { color: #546a73; font-style: italic; }
+  .key { color: #82aaff; }
+  .val { color: #f78c6c; }
+  .num { color: #f78c6c; }
+
+  /* ── tables ── */
+  .table-wrap { overflow-x: auto; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th {
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+    color: var(--fg);
+    font-weight: 600;
+    text-align: left;
+    padding: 9px 14px;
+    border-bottom: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    white-space: nowrap;
+  }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--border); color: var(--fg); }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: color-mix(in srgb, var(--accent) 4%, var(--surface)); }
+  td code, th code { font-size: 12px; }
+
+  /* ── verdict chips (boon/bust) ── */
+  .verdict-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  @media (max-width: 520px) { .verdict-grid { grid-template-columns: 1fr; } }
+  .verdict-card {
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    padding: 16px;
+  }
+  .verdict-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .verdict-label.bust { color: #e05252; }
+  .verdict-label.boon { color: var(--accent); }
+  .verdict-card ul { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+  .verdict-card li { font-size: 13px; color: var(--fg-muted); padding-left: 16px; position: relative; }
+  .verdict-card li::before { content: '—'; position: absolute; left: 0; color: var(--border); }
+  .verdict-card li strong { color: var(--fg); font-weight: 500; }
+
+  /* ── stack block ── */
+  .stack-block {
+    background: var(--code-bg);
+    border-radius: 8px;
+    padding: 20px 20px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.8;
+    color: var(--code-fg);
+    margin: 14px 0;
+    overflow-x: auto;
+  }
+  .stack-block .tree-comment { color: #546a73; }
+  .stack-block .tree-key { color: #82aaff; }
+  .stack-block .tree-val { color: #a8e050; }
+  .stack-block .tree-arrow { color: #c792ea; }
+
+  /* ── decision matrix callout ── */
+  .decision-note {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--fg);
+  }
+  .decision-note strong { color: var(--accent); }
+
+  /* ── helm block ── */
+  .helm-section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 24px; }
+  .helm-section p { margin-bottom: 12px; font-size: 13.5px; color: var(--fg-muted); }
+
+  /* ── scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--fg-muted); }
+
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<!-- TOP BAR -->
+<header class="topbar">
+  <div class="topbar-logo">
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <rect width="18" height="18" rx="4" fill="#76b900"/>
+      <path d="M4 13V5h4c2.2 0 3.5 1.1 3.5 2.8 0 1.2-.7 2.1-1.8 2.5L12 13h-2l-1.8-2.4H6V13H4zm2-4.2h1.8c1.1 0 1.7-.5 1.7-1.2 0-.8-.6-1.3-1.7-1.3H6v2.5z" fill="white"/>
+    </svg>
+    NVIDIA · K8s
+  </div>
+  <div class="topbar-divider"></div>
+  <span class="topbar-title">GPU Sharing Reference</span>
+  <div class="topbar-spacer"></div>
+  <button class="theme-btn" id="themeBtn" aria-label="Toggle theme">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+    Theme
+  </button>
+</header>
+
+<div class="shell">
+  <!-- SIDEBAR TOC -->
+  <nav class="sidebar" aria-label="Table of contents">
+    <div class="toc-label">Contents</div>
+    <ul class="toc-list" id="tocList">
+      <li><a href="#mechanisms">Sharing Mechanisms</a></li>
+      <li><a href="#timeslicing">1 — Time-Slicing</a></li>
+      <li><a href="#mig">2 — MIG Partitioning</a></li>
+      <li><a href="#mps">3 — MPS</a></li>
+      <li><a href="#scheduling">4 — Scheduling</a>
+        <ul class="toc-list toc-sub">
+          <li><a href="#binpacking">Bin-Packing</a></li>
+          <li><a href="#nodesel">Node Selectors</a></li>
+          <li><a href="#priority">Priority Classes</a></li>
+        </ul>
+      </li>
+      <li><a href="#dynmig">5 — Dynamic MIG</a></li>
+      <li><a href="#stack">Recommended Stack</a></li>
+      <li><a href="#vms">VMs: Boon or Bust?</a>
+        <ul class="toc-list toc-sub">
+          <li><a href="#kubevirt">KubeVirt</a></li>
+          <li><a href="#matrix">Decision Matrix</a></li>
+        </ul>
+      </li>
+      <li><a href="#helm">Helm Install</a></li>
+    </ul>
+  </nav>
+
+  <!-- MAIN CONTENT -->
+  <main class="content">
+    <div class="page-header">
+      <div class="page-eyebrow">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect width="12" height="12" rx="2"/></svg>
+        GPU Efficiency
+      </div>
+      <h1>NVIDIA GPU Sharing on Kubernetes</h1>
+      <div class="page-meta">
+        <span>Reference guide</span>
+        <span>·</span>
+        <a href="https://research.colfax-intl.com/sharing-nvidia-gpus-at-the-system-level-time-sliced-and-mig-backed-vgpus/" target="_blank" rel="noopener">Source article ↗</a>
+      </div>
+    </div>
+
+    <!-- MECHANISMS -->
+    <section class="section" id="mechanisms">
+      <h2><span class="sec-num">00</span> Hardware Sharing Mechanisms</h2>
+      <div class="mech-grid">
+        <div class="mech-card">
+          <div class="mech-name">Time-Slicing</div>
+          <span class="mech-hw">Any NVIDIA GPU</span>
+          <div class="mech-iso"><strong>Isolation:</strong> None — memory shared across pods</div>
+          <div class="mech-use">Dev environments, low-utilization inference, burstable workloads</div>
+        </div>
+        <div class="mech-card">
+          <div class="mech-name">MIG</div>
+          <span class="mech-hw">Ampere+ (A100, H100, A30)</span>
+          <div class="mech-iso"><strong>Isolation:</strong> Hard — dedicated SMs, memory bandwidth, engines</div>
+          <div class="mech-use">Production inference, multi-tenant SLA, consistent QoS</div>
+        </div>
+        <div class="mech-card">
+          <div class="mech-name">MPS</div>
+          <span class="mech-hw">Any NVIDIA GPU</span>
+          <div class="mech-iso"><strong>Isolation:</strong> None — concurrent CUDA contexts</div>
+          <div class="mech-use">Batch decode, embedding generation, idle-SM workloads</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TIME-SLICING -->
+    <section class="section" id="timeslicing">
+      <h2><span class="sec-num">01</span> Time-Slicing via NVIDIA Device Plugin</h2>
+      <p>Simplest option. Device plugin advertises N virtual GPUs per physical GPU. Pods request <code>nvidia.com/gpu: 1</code> normally.</p>
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">yaml</span><button class="copy-btn" data-target="ts1">Copy</button></div>
+        <pre id="ts1"><span class="key">apiVersion</span>: <span class="str">v1</span>
+<span class="key">kind</span>: <span class="str">ConfigMap</span>
+<span class="key">metadata</span>:
+  <span class="key">name</span>: <span class="str">time-slicing-config</span>
+  <span class="key">namespace</span>: <span class="str">gpu-operator</span>
+<span class="key">data</span>:
+  <span class="key">any</span>: <span class="str">|-</span>
+    <span class="key">version</span>: <span class="str">v1</span>
+    <span class="key">sharing</span>:
+      <span class="key">timeSlicing</span>:
+        <span class="key">replicas</span>: <span class="num">4</span>   <span class="cmt"># 4 pods share 1 physical GPU</span></pre>
+      </div>
+      <div class="caveat">~20% ctx-switch overhead. No memory isolation — one pod OOMs, all pods on that GPU feel it.</div>
+    </section>
+
+    <!-- MIG -->
+    <section class="section" id="mig">
+      <h2><span class="sec-num">02</span> MIG Partitioning (Ampere+)</h2>
+      <p>GPU Operator's MIG Manager reconfigures profiles via node label. Handles drain/reconfigure/rejoin automatically — no manual <code>nvidia-smi mig</code> calls.</p>
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">yaml</span><button class="copy-btn" data-target="mig1">Copy</button></div>
+        <pre id="mig1"><span class="cmt"># Apply to node to trigger reconfiguration</span>
+<span class="key">nvidia.com/mig.config</span>: <span class="str">"all-3g.40gb"</span>   <span class="cmt"># 2x MIG instances on A100-80GB</span></pre>
+      </div>
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">yaml — pod resource request</span><button class="copy-btn" data-target="mig2">Copy</button></div>
+        <pre id="mig2"><span class="key">resources</span>:
+  <span class="key">limits</span>:
+    <span class="key">nvidia.com/mig-3g.40gb</span>: <span class="num">1</span></pre>
+      </div>
+      <h3>Common MIG Profiles — A100-80GB</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Profile</th><th>SMs</th><th>Memory</th><th>Instances / GPU</th></tr></thead>
+          <tbody>
+            <tr><td><code>1g.10gb</code></td><td>1/7</td><td>10 GB</td><td>7</td></tr>
+            <tr><td><code>2g.20gb</code></td><td>2/7</td><td>20 GB</td><td>3</td></tr>
+            <tr><td><code>3g.40gb</code></td><td>3/7</td><td>40 GB</td><td>2</td></tr>
+            <tr><td><code>7g.80gb</code></td><td>7/7</td><td>80 GB</td><td>1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- MPS -->
+    <section class="section" id="mps">
+      <h2><span class="sec-num">03</span> MPS — Multi-Process Service</h2>
+      <p>Multiple CUDA contexts run simultaneously (not time-sliced). Lower latency, no ctx-switch overhead. Better throughput for concurrent small kernels; same lack of memory isolation as time-slicing.</p>
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">yaml</span><button class="copy-btn" data-target="mps1">Copy</button></div>
+        <pre id="mps1"><span class="key">sharing</span>:
+  <span class="key">mps</span>:
+    <span class="key">replicas</span>: <span class="num">4</span></pre>
+      </div>
+    </section>
+
+    <!-- SCHEDULING -->
+    <section class="section" id="scheduling">
+      <h2><span class="sec-num">04</span> Scheduling Optimizations</h2>
+
+      <h3 id="binpacking">Bin-Packing</h3>
+      <p>Default kube-scheduler spreads workloads across nodes. Override with <code>MostAllocated</code> to pack GPUs full before using next node.</p>
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">yaml — KubeSchedulerConfiguration</span><button class="copy-btn" data-target="sched1">Copy</button></div>
+        <pre id="sched1"><span class="key">apiVersion</span>: <span class="str">kubescheduler.config.k8s.io/v1</span>
+<span class="key">kind</span>: <span class="str">KubeSchedulerConfiguration</span>
+<span class="key">profiles</span>:
+- <span class="key">pluginConfig</span>:
+  - <span class="key">name</span>: <span class="str">NodeResourcesFit</span>
+    <span class="key">args</span>:
+      <span class="key">scoringStrategy</span>:
+        <span class="key">type</span>: <span class="str">MostAllocated</span>
+        <span class="key">resources</span>:
+        - <span class="key">name</span>: <span class="str">nvidia.com/gpu</span>
+          <span class="key">weight</span>: <span class="num">10</span>
+        - <span class="key">name</span>: <span class="str">cpu</span>
+          <span class="key">weight</span>: <span class="num">1</span>
+        - <span class="key">name</span>: <span class="str">memory</span>
+          <span class="key">weight</span>: <span class="num">1</span></pre>
+      </div>
+
+      <h3 id="nodesel">GPU Feature Discovery Node Selectors</h3>
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">yaml</span><button class="copy-btn" data-target="ns1">Copy</button></div>
+        <pre id="ns1"><span class="key">nodeSelector</span>:
+  <span class="key">nvidia.com/gpu.product</span>: <span class="str">"A100-SXM4-80GB"</span>
+  <span class="key">nvidia.com/gpu.memory</span>: <span class="str">"81920"</span>
+  <span class="key">nvidia.com/mig.capable</span>: <span class="str">"true"</span></pre>
+      </div>
+
+      <h3 id="priority">Priority Classes + Preemption</h3>
+      <p>High-priority inference pods preempt low-priority training jobs when GPU capacity is needed.</p>
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">yaml</span><button class="copy-btn" data-target="pc1">Copy</button></div>
+        <pre id="pc1"><span class="key">apiVersion</span>: <span class="str">scheduling.k8s.io/v1</span>
+<span class="key">kind</span>: <span class="str">PriorityClass</span>
+<span class="key">metadata</span>:
+  <span class="key">name</span>: <span class="str">inference-high</span>
+<span class="key">value</span>: <span class="num">1000</span>
+<span class="key">preemptionPolicy</span>: <span class="str">PreemptLowerPriority</span>
+---
+<span class="key">apiVersion</span>: <span class="str">scheduling.k8s.io/v1</span>
+<span class="key">kind</span>: <span class="str">PriorityClass</span>
+<span class="key">metadata</span>:
+  <span class="key">name</span>: <span class="str">batch-train-low</span>
+<span class="key">value</span>: <span class="num">100</span>
+<span class="key">preemptionPolicy</span>: <span class="str">Never</span></pre>
+      </div>
+    </section>
+
+    <!-- DYNAMIC MIG -->
+    <section class="section" id="dynmig">
+      <h2><span class="sec-num">05</span> Dynamic MIG Reconfiguration</h2>
+      <p>Shift MIG profiles by time of day to match workload patterns. GPU Operator handles node drain/reconfigure/rejoin — no manual intervention.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Profile</th><th>Instances</th><th>Workload</th></tr></thead>
+          <tbody>
+            <tr><td>Day</td><td><code>all-7g.80gb</code></td><td>1× full A100</td><td>Distributed training</td></tr>
+            <tr><td>Night</td><td><code>all-1g.10gb</code></td><td>7× small slices</td><td>Batch inference</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">yaml — CronJob</span><button class="copy-btn" data-target="cron1">Copy</button></div>
+        <pre id="cron1"><span class="key">apiVersion</span>: <span class="str">batch/v1</span>
+<span class="key">kind</span>: <span class="str">CronJob</span>
+<span class="key">metadata</span>:
+  <span class="key">name</span>: <span class="str">mig-reconfigure-night</span>
+<span class="key">spec</span>:
+  <span class="key">schedule</span>: <span class="str">"0 20 * * *"</span>   <span class="cmt"># 8pm</span>
+  <span class="key">jobTemplate</span>:
+    <span class="key">spec</span>:
+      <span class="key">template</span>:
+        <span class="key">spec</span>:
+          <span class="key">containers</span>:
+          - <span class="key">name</span>: <span class="str">reconfigure</span>
+            <span class="key">image</span>: <span class="str">bitnami/kubectl</span>
+            <span class="key">command</span>:
+            - <span class="str">kubectl</span>
+            - <span class="str">label</span>
+            - <span class="str">node</span>
+            - <span class="str">&lt;gpu-node&gt;</span>
+            - <span class="str">nvidia.com/mig.config=all-1g.10gb</span></pre>
+      </div>
+    </section>
+
+    <!-- STACK -->
+    <section class="section" id="stack">
+      <h2><span class="sec-num">06</span> Recommended Stack</h2>
+      <div class="stack-block">
+<span class="tree-key">NVIDIA GPU Operator</span>          <span class="tree-comment"># manages drivers, device plugin, MIG manager, MPS daemon</span>
+  └── <span class="tree-key">GPU Feature Discovery</span>  <span class="tree-comment"># labels nodes with GPU model, VRAM, MIG capability</span>
+  └── <span class="tree-key">DCGM Exporter</span>          <span class="tree-comment"># Prometheus metrics: utilization, memory, errors, NVLink</span>
+
+<span class="tree-key">Scheduling:</span>
+  <span class="tree-val">kube-scheduler</span>             <span class="tree-comment"># bin-packing config for GPU workloads</span>
+  <span class="tree-val">Volcano / JobSet</span>           <span class="tree-comment"># gang scheduling for distributed training</span>
+
+<span class="tree-key">Sharing strategy by workload:</span>
+  Dev / experimentation      <span class="tree-arrow">→</span> time-slicing (4–8× replicas)
+  Production inference       <span class="tree-arrow">→</span> MIG (A100/H100) or MPS
+  Distributed training       <span class="tree-arrow">→</span> full GPU + gang scheduling</div>
+
+      <h3>K8s Value-Add vs Bare-Metal / Hypervisor vGPU</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Concern</th><th>K8s Solution</th></tr></thead>
+          <tbody>
+            <tr><td>Dynamic MIG reconfiguration</td><td>GPU Operator + node label</td></tr>
+            <tr><td>Workload isolation</td><td>Namespaces + ResourceQuota per team</td></tr>
+            <tr><td>GPU bin-packing</td><td>Scheduler <code>MostAllocated</code> strategy</td></tr>
+            <tr><td>Observability</td><td>DCGM Exporter + Prometheus/Grafana</td></tr>
+            <tr><td>Autoscaling GPU nodes</td><td>Karpenter with GPU instance type constraints</td></tr>
+            <tr><td>Mixed workload priority</td><td>PriorityClass + preemption</td></tr>
+            <tr><td>License cost</td><td>No NVIDIA vGPU license needed for MIG/time-slicing in pods</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- VMs -->
+    <section class="section" id="vms">
+      <h2><span class="sec-num">07</span> VMs: Boon or Bust?</h2>
+      <p>Mostly bust. The VM layer adds overhead and cost that K8s + MIG already solves for most workloads.</p>
+      <div class="verdict-grid">
+        <div class="verdict-card">
+          <div class="verdict-label bust">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 1L1 11h10L6 1zm0 2.5L9.2 10H2.8L6 3.5z"/></svg>
+            Where VMs Hurt
+          </div>
+          <ul>
+            <li><strong>Performance:</strong> ~20% overhead per CUDA API call through vGPU driver stack, plus VM memory eats VRAM headroom</li>
+            <li><strong>License cost:</strong> NVIDIA vGPU requires per-concurrent-user licensing; MIG + time-slicing in pods is free</li>
+            <li><strong>Complexity:</strong> hypervisor + VM images + K8s + GPU Operator + vGPU driver versions must match host exactly</li>
+            <li><strong>Startup latency:</strong> pods spin up in seconds; VMs take 30–90s, killing autoscaling responsiveness</li>
+          </ul>
+        </div>
+        <div class="verdict-card">
+          <div class="verdict-label boon">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 1a5 5 0 100 10A5 5 0 006 1zm2.5 3.5L5.5 8 3.5 6l.7-.7 1.3 1.3 2.3-2.3.7.7z"/></svg>
+            Where VMs Earn Their Cost
+          </div>
+          <ul>
+            <li><strong>Hard multi-tenant isolation:</strong> different orgs, compliance (HIPAA, FedRAMP), untrusted code — container escape doesn't become tenant escape</li>
+            <li><strong>Mixed OS:</strong> Windows workloads needing GPU access (DirectML, DirectX) — no other path</li>
+            <li><strong>Already on hypervisor:</strong> EKS, GKE, AKS GPU nodes are VMs; overhead is baked in</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3 id="kubevirt">Middle Ground: KubeVirt</h3>
+      <p>Run VMs as K8s workloads with GPU passthrough. Gets K8s-native lifecycle + VM isolation + MIG hardware partitioning. Loses pod startup speed; adds KubeVirt operator complexity.</p>
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">yaml — KubeVirt VirtualMachine</span><button class="copy-btn" data-target="kv1">Copy</button></div>
+        <pre id="kv1"><span class="key">apiVersion</span>: <span class="str">kubevirt.io/v1</span>
+<span class="key">kind</span>: <span class="str">VirtualMachine</span>
+<span class="key">spec</span>:
+  <span class="key">template</span>:
+    <span class="key">spec</span>:
+      <span class="key">domain</span>:
+        <span class="key">devices</span>:
+          <span class="key">gpus</span>:
+          - <span class="key">deviceName</span>: <span class="str">nvidia.com/mig-3g.40gb</span>
+            <span class="key">name</span>: <span class="str">gpu0</span></pre>
+      </div>
+
+      <h3 id="matrix">Decision Matrix</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Scenario</th><th>Recommendation</th></tr></thead>
+          <tbody>
+            <tr><td>Internal teams, trusted workloads</td><td>Bare metal K8s + MIG/time-slicing. Skip VMs.</td></tr>
+            <tr><td>Multi-org or compliance boundary</td><td>VMs (KubeVirt or hypervisor) + MIG passthrough</td></tr>
+            <tr><td>Cloud (EKS/GKE/AKS)</td><td>Already on VMs — GPU passthrough node pools, accept it</td></tr>
+            <tr><td>Windows GPU workloads</td><td>VMs required, no alternative</td></tr>
+            <tr><td>Mixed Linux multi-tenant inference</td><td>MIG + ResourceQuota sufficient, no VMs needed</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="decision-note"><strong>Default:</strong> bare metal K8s nodes with GPU Operator. VMs only when compliance or OS requirements force it.</div>
+    </section>
+
+    <!-- HELM -->
+    <section class="section" id="helm">
+      <h2><span class="sec-num">08</span> GPU Operator Helm Install</h2>
+      <div class="helm-section">
+        <p>Baseline install with time-slicing config and mixed MIG strategy.</p>
+        <div class="code-wrap">
+          <div class="code-bar"><span class="code-lang">bash</span><button class="copy-btn" data-target="helm1">Copy</button></div>
+          <pre id="helm1">helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
+helm repo update
+
+helm install gpu-operator nvidia/gpu-operator \
+  --namespace gpu-operator \
+  --create-namespace \
+  --set mig.strategy=mixed \
+  --set devicePlugin.config.name=time-slicing-config</pre>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  // theme toggle
+  const btn = document.getElementById('themeBtn');
+  const root = document.documentElement;
+  btn.addEventListener('click', () => {
+    const cur = root.getAttribute('data-theme');
+    if (!cur) {
+      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      root.setAttribute('data-theme', isDark ? 'light' : 'dark');
+    } else {
+      root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+    }
+    try { localStorage.setItem('theme', root.getAttribute('data-theme')); } catch(e){}
+  });
+  try {
+    const saved = localStorage.getItem('theme');
+    if (saved) root.setAttribute('data-theme', saved);
+  } catch(e){}
+
+  // copy buttons
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = document.getElementById(btn.dataset.target);
+      if (!target) return;
+      const text = target.textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1800);
+      }).catch(() => {
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(target);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      });
+    });
+  });
+
+  // active TOC link on scroll
+  const sections = document.querySelectorAll('.section[id]');
+  const tocLinks = document.querySelectorAll('.toc-list a');
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        tocLinks.forEach(a => a.classList.remove('active'));
+        const link = document.querySelector(`.toc-list a[href="#${e.target.id}"]`);
+        if (link) link.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(s => obs.observe(s));
+</script>
