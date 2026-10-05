@@ -9,7 +9,7 @@ Covers time-slicing, MIG partitioning, MPS, scheduling optimizations, dynamic MI
 | File | Description |
 |---|---|
 | `gpu-sharing-k8s.md` | Full reference in Markdown |
-| `gpu-sharing-k8s.html` | Rendered interactive reference (open in browser) |
+| `index.html` | Rendered interactive reference — also served via GitHub Pages |
 
 ## Approaches Covered
 
