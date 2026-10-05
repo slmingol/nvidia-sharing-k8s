@@ -402,6 +402,39 @@
   ::-webkit-scrollbar-thumb:hover { background: var(--fg-muted); }
 
   a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ── next steps ── */
+  .next-steps-list { display: flex; flex-direction: column; gap: 2px; }
+  .next-step {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .next-step:last-child { border-bottom: none; }
+  .next-step-rank {
+    flex-shrink: 0;
+    width: 56px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    border-radius: 4px;
+    padding: 3px 0;
+    text-align: center;
+    margin-top: 2px;
+  }
+  .next-step-rank.high  { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+  .next-step-rank.mid   { background: color-mix(in srgb, #f0a500 12%, transparent); color: #c47e00; border: 1px solid color-mix(in srgb, #f0a500 30%, transparent); }
+  .next-step-rank.low   { background: color-mix(in srgb, var(--fg-muted) 10%, transparent); color: var(--fg-muted); border: 1px solid color-mix(in srgb, var(--fg-muted) 20%, transparent); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .next-step-rank.mid { color: #e6a817; }
+  }
+  :root[data-theme="dark"] .next-step-rank.mid { color: #e6a817; }
+  .next-step-body { flex: 1; min-width: 0; }
+  .next-step-title { font-size: 14px; font-weight: 600; color: var(--fg); margin-bottom: 4px; }
+  .next-step-desc { font-size: 13px; color: var(--fg-muted); line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -454,6 +487,7 @@
         </ul>
       </li>
       <li><a href="#helm">Helm Install</a></li>
+      <li><a href="#nextsteps">Next Steps</a></li>
     </ul>
   </nav>
 
@@ -762,6 +796,71 @@ helm install gpu-operator nvidia/gpu-operator \
   --set mig.strategy=mixed \
   --set devicePlugin.config.name=time-slicing-config</pre>
         </div>
+      </div>
+    </section>
+
+    <!-- NEXT STEPS -->
+    <section class="section" id="nextsteps">
+      <h2><span class="sec-num">09</span> Next Steps</h2>
+      <p>Ranked by usefulness. Each builds directly on what's here.</p>
+      <div class="next-steps-list">
+
+        <div class="next-step">
+          <div class="next-step-rank high">High</div>
+          <div class="next-step-body">
+            <div class="next-step-title"><code>manifests/</code> directory</div>
+            <div class="next-step-desc">The YAML snippets above as actual deployable files — time-slicing ConfigMap, MIG CronJob, PriorityClasses, scheduler config. Right now copy-paste only; a <code>kubectl apply -f manifests/</code> path makes this repo operationally useful.</div>
+          </div>
+        </div>
+
+        <div class="next-step">
+          <div class="next-step-rank high">High</div>
+          <div class="next-step-body">
+            <div class="next-step-title">GitHub Actions CI — manifest validation</div>
+            <div class="next-step-desc">Run <code>kubeconform</code> against <code>manifests/</code> on every push. Keeps YAML examples valid against real Kubernetes schemas and catches drift when profiles or API versions change.</div>
+          </div>
+        </div>
+
+        <div class="next-step">
+          <div class="next-step-rank high">High</div>
+          <div class="next-step-body">
+            <div class="next-step-title">H100 MIG profiles table</div>
+            <div class="next-step-desc">H100 has different slice sizes and a new 3g.47gb profile not present on A100. Increasingly the default inference hardware; the current table is A100-only and will mislead H100 users.</div>
+          </div>
+        </div>
+
+        <div class="next-step">
+          <div class="next-step-rank mid">Medium</div>
+          <div class="next-step-body">
+            <div class="next-step-title">Karpenter <code>NodePool</code> example</div>
+            <div class="next-step-desc">GPU autoscaling via Karpenter is the dominant cloud pattern (EKS, AKS). A <code>NodePool</code> + <code>EC2NodeClass</code> snippet targeting GPU instance families (p4d, p3, g5) rounds out the scheduling section.</div>
+          </div>
+        </div>
+
+        <div class="next-step">
+          <div class="next-step-rank mid">Medium</div>
+          <div class="next-step-body">
+            <div class="next-step-title"><code>values/</code> Helm overrides</div>
+            <div class="next-step-desc">Three GPU Operator Helm values files — one each for time-slicing, MIG mixed, and MPS — so <code>helm install -f values/time-slicing.yaml</code> works without flags. Lowers the bar for first-time operators.</div>
+          </div>
+        </div>
+
+        <div class="next-step">
+          <div class="next-step-rank low">Lower</div>
+          <div class="next-step-body">
+            <div class="next-step-title">DCGM Grafana dashboard reference</div>
+            <div class="next-step-desc">Link or embed the NVIDIA DCGM dashboard JSON (dashboard ID 12239 on Grafana.com). Gives operators an immediate observability starting point for the metrics DCGM Exporter surfaces.</div>
+          </div>
+        </div>
+
+        <div class="next-step">
+          <div class="next-step-rank low">Lower</div>
+          <div class="next-step-body">
+            <div class="next-step-title">Benchmarks section</div>
+            <div class="next-step-desc">Sourced latency and throughput numbers comparing time-slicing, MIG, and MPS under inference load. Would turn the qualitative trade-off table into a data-backed decision guide.</div>
+          </div>
+        </div>
+
       </div>
     </section>
   </main>
