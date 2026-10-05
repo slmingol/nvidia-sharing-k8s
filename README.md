@@ -2,6 +2,8 @@
 
 Reference guide and implementation patterns for sharing NVIDIA GPUs efficiently on Kubernetes.
 
+**Live site:** https://slmingol.github.io/nvidia-sharing-k8s/
+
 Covers time-slicing, MIG partitioning, MPS, scheduling optimizations, dynamic MIG reconfiguration, and a VM trade-off analysis.
 
 ## Files
