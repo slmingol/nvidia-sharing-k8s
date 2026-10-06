@@ -527,6 +527,7 @@
       </li>
       <li><a href="#dynmig">5 — Dynamic MIG</a></li>
       <li><a href="#hybrid">Hybrid Approaches</a></li>
+      <li><a href="#triton">Triton vs. vLLM</a></li>
       <li><a href="#stack">6 — Recommended Stack</a></li>
       <li><a href="#vms">7 — VMs: Boon or Bust?</a>
         <ul class="toc-list toc-sub">
@@ -1277,6 +1278,64 @@
       <div class="caveat caveat-ok">
         <strong>Isolation hierarchy</strong>
         MIG enforces the outer boundary (slice cannot be exceeded by any workload). MPS adds concurrent execution within that boundary. The MIG guarantee holds regardless of MPS behavior: a runaway MPS client cannot consume another slice's VRAM.
+      </div>
+    </section>
+
+    <!-- TRITON -->
+    <section class="section" id="triton">
+      <h2><span class="sec-num" style="font-size:10px;letter-spacing:.05em">Inf</span> Inference Server Layer — Triton vs. vLLM</h2>
+      <p>Triton Inference Server and vLLM sit at the <em>application layer</em>, above K8s GPU sharing. They don't replace MIG, device plugin, or DRA — they run inside whatever GPU resource(s) K8s assigns to their pod.</p>
+
+      <div class="stack-block">
+<span class="tree-key">Hardware:</span> 8× A100
+  <span class="tree-arrow">↓</span> K8s GPU sharing layer  <span class="tree-comment"># MIG / time-slicing / DRA / device plugin</span>
+  <span class="tree-arrow">↓</span> pod gets GPU resource(s)
+  <span class="tree-arrow">↓</span> <span class="tree-key">Application / inference server layer</span>  <span class="tree-comment"># Triton and vLLM live here</span>
+      <span class="tree-arrow">↓</span> Triton's own internal sharing  <span class="tree-comment"># instance_group, concurrent execution, dynamic batching</span></div>
+
+      <h3>What Triton adds at the application layer</h3>
+      <ul style="margin:10px 0 0 18px;line-height:2;font-size:13.5px">
+        <li><strong><code>instance_group</code></strong> — load N copies of a model spread across specific GPU indices the pod owns. K8s gave pod GPUs 0–3; Triton puts 2 instances on GPU 0, 2 on GPU 1.</li>
+        <li><strong>Concurrent model execution</strong> — multiple different models share one GPU simultaneously through Triton's own scheduler. No VRAM isolation between them (same noisy-neighbor exposure as MPS — application-level, not hardware).</li>
+        <li><strong>Dynamic batching</strong> — coalesces requests before GPU invocation. Reduces effective GPU calls. Complements K8s-level sharing.</li>
+        <li><strong>Rate limiter</strong> — caps simultaneous requests per model, prevents one model starving others on the same GPU.</li>
+        <li><strong>Multi-backend + ensembles</strong> — TensorRT, PyTorch, ONNX, TF, OpenVINO, Python, and a vLLM backend. One Triton instance can serve a CNN, reranker, and LLM together in a single ensemble pipeline — something three separate vLLM instances cannot do.</li>
+      </ul>
+
+      <h3 style="margin-top:20px">Triton vs. vLLM</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th></th><th>vLLM</th><th>Triton</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Target</strong></td><td>LLMs only</td><td>Any model type</td></tr>
+            <tr><td><strong>LLM batching</strong></td><td>Continuous batching + PagedAttention — best-in-class LLM throughput</td><td>Dynamic batching — good, but LLM-specific optimizations weaker without TRT-LLM backend</td></tr>
+            <tr><td><strong>LLM backend</strong></td><td>Built-in</td><td>TRT-LLM backend or vLLM backend</td></tr>
+            <tr><td><strong>Multi-model serving</strong></td><td>No — one model per instance</td><td>Yes — model repository, ensembles, multiple models concurrently</td></tr>
+            <tr><td><strong>RAG pipelines</strong></td><td>No</td><td>Yes — ensemble: embed → rerank → LLM in one server</td></tr>
+            <tr><td><strong>Tensor parallelism</strong></td><td>Native, first-class</td><td>Via TRT-LLM backend</td></tr>
+            <tr><td><strong>K8s integration</strong></td><td>Direct pod</td><td>Direct pod, or via KServe</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:20px">Triton + MIG — same pattern as vLLM + MIG</h3>
+      <p>One Triton pod per MIG slice, each slice running different models, isolated at hardware level. For mixed-model workloads this beats running separate vLLM instances:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>MIG slice</th><th>Triton model(s)</th><th>Use</th></tr></thead>
+          <tbody>
+            <tr><td><code>1g.10gb</code></td><td>embedding model</td><td>RAG retrieval</td></tr>
+            <tr><td><code>1g.10gb</code></td><td>reranker</td><td>RAG reranking</td></tr>
+            <tr><td><code>3g.40gb</code></td><td>LLM (TRT-LLM or vLLM backend)</td><td>generation</td></tr>
+            <tr><td><code>2g.20gb</code></td><td>vision / classification</td><td>multimodal pre-processing</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:8px;font-size:13px;line-height:1.7">Each slice is hardware-isolated — the embedding model cannot OOM the LLM slice. Triton's ensemble API then wires the pipeline together over gRPC without leaving the node. A single vLLM instance cannot express this topology.</p>
+
+      <div class="caveat caveat-danger">
+        <strong>Triton does not solve K8s-level isolation</strong>
+        Concurrent model execution within a Triton instance has no VRAM isolation between models. A misbehaving or memory-leaking model inside Triton can OOM the entire server and kill all co-located models — the same noisy-neighbor problem as MPS. For hard per-tenant isolation, MIG is still required at the K8s layer beneath Triton.
       </div>
     </section>
 
