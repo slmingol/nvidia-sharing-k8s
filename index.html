@@ -478,22 +478,51 @@
   .diag-label-sm{ font-family: 'IBM Plex Sans', sans-serif; font-size: 11px; font-weight: 600; fill: currentColor; }
   .diag-muted   { opacity: 0.55; }
 
-  /* ── search ── */
-  .toc-search {
-    width: 100%;
-    background: var(--bg);
+  /* ── full-doc search ── */
+  .search-wrap {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: 6px;
+    padding: 0 6px;
+    height: 32px;
+    min-width: 220px;
+  }
+  .search-wrap.open { display: flex; }
+  .search-wrap input {
+    background: none;
+    border: none;
+    outline: none;
     color: var(--fg);
     font-family: inherit;
-    font-size: 12px;
-    padding: 5px 8px;
-    margin-bottom: 10px;
-    outline: none;
-    transition: border-color .15s;
+    font-size: 13px;
+    flex: 1;
+    min-width: 0;
   }
-  .toc-search:focus { border-color: var(--accent); }
-  .toc-search::placeholder { color: var(--fg-muted); }
+  .search-wrap input::placeholder { color: var(--fg-muted); }
+  .search-count { font-size: 11px; color: var(--fg-muted); white-space: nowrap; }
+  .search-nav { background: none; border: none; color: var(--fg-muted); cursor: pointer; padding: 2px 3px; font-size: 13px; line-height: 1; }
+  .search-nav:hover { color: var(--accent); }
+  .search-close { background: none; border: none; color: var(--fg-muted); cursor: pointer; padding: 2px 4px; font-size: 14px; line-height: 1; }
+  .search-close:hover { color: var(--fg); }
+  .search-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg-muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 13px;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .search-btn:hover { border-color: var(--accent); color: var(--accent); }
+  mark.hl { background: color-mix(in srgb, #76b900 35%, transparent); color: inherit; border-radius: 2px; }
+  mark.hl-current { background: #76b900; color: #000; border-radius: 2px; }
 
   /* ── mobile sidebar ── */
   .mob-toc-btn {
@@ -605,7 +634,24 @@
   </div>
   <div class="topbar-divider"></div>
   <span class="topbar-title">GPU Sharing Reference</span>
+  <!-- full-doc search bar -->
+  <div class="search-wrap" id="searchWrap" role="search">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;color:var(--fg-muted)">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    <input id="searchInput" type="search" placeholder="Search…" aria-label="Search document" autocomplete="off">
+    <span class="search-count" id="searchCount"></span>
+    <button class="search-nav" id="searchPrev" title="Previous (Shift+Enter)">&#8593;</button>
+    <button class="search-nav" id="searchNext" title="Next (Enter)">&#8595;</button>
+    <button class="search-close" id="searchClose" aria-label="Close search">&#x2715;</button>
+  </div>
   <div class="topbar-spacer"></div>
+  <button class="search-btn" id="searchBtn" aria-label="Search document">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    Search
+  </button>
   <button class="mob-toc-btn" id="mobTocBtn" aria-label="Toggle navigation">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
       <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
@@ -634,7 +680,6 @@
   <!-- SIDEBAR TOC -->
   <nav class="sidebar" id="sidebar" aria-label="Table of contents">
     <div class="toc-label">Contents</div>
-    <input class="toc-search" id="tocSearch" type="search" placeholder="Filter…" aria-label="Filter sections">
     <ul class="toc-list" id="tocList">
       <li><a href="#mechanisms">Sharing Mechanisms</a></li>
       <li><a href="#diagrams">Approach Diagrams</a></li>
@@ -1819,13 +1864,96 @@ helm install gpu-operator nvidia/gpu-operator \
   mobOverlay.addEventListener('click', closeSidebar);
   document.querySelectorAll('.toc-list a').forEach(a => a.addEventListener('click', closeSidebar));
 
-  // TOC search filter
-  document.getElementById('tocSearch').addEventListener('input', function() {
-    const q = this.value.toLowerCase().trim();
-    document.querySelectorAll('#tocList li').forEach(li => {
-      const text = li.textContent.toLowerCase();
-      li.style.display = (!q || text.includes(q)) ? '' : 'none';
+  // ── full-document search ──
+  const searchBtn   = document.getElementById('searchBtn');
+  const searchWrap  = document.getElementById('searchWrap');
+  const searchInput = document.getElementById('searchInput');
+  const searchCount = document.getElementById('searchCount');
+  const searchPrev  = document.getElementById('searchPrev');
+  const searchNext  = document.getElementById('searchNext');
+  const searchClose = document.getElementById('searchClose');
+  const contentEl   = document.querySelector('.content');
+
+  let marks = [], markIdx = -1;
+
+  function clearMarks() {
+    marks.forEach(m => {
+      const parent = m.parentNode;
+      if (parent) { parent.replaceChild(document.createTextNode(m.textContent), m); parent.normalize(); }
     });
+    marks = []; markIdx = -1; searchCount.textContent = '';
+  }
+
+  function doSearch(q) {
+    clearMarks();
+    if (!q) return;
+    const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const tag = node.parentElement.tagName;
+        if (['SCRIPT','STYLE','INPUT','TEXTAREA'].includes(tag)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const textNodes = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode);
+    textNodes.forEach(node => {
+      const text = node.nodeValue;
+      if (!re.test(text)) return;
+      re.lastIndex = 0;
+      const frag = document.createDocumentFragment();
+      let last = 0, m;
+      while ((m = re.exec(text)) !== null) {
+        frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+        const mark = document.createElement('mark');
+        mark.className = 'hl';
+        mark.textContent = m[0];
+        frag.appendChild(mark);
+        marks.push(mark);
+        last = m.index + m[0].length;
+      }
+      frag.appendChild(document.createTextNode(text.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+    });
+    searchCount.textContent = marks.length ? `1/${marks.length}` : '0';
+    if (marks.length) { markIdx = 0; goTo(0); }
+  }
+
+  function goTo(i) {
+    marks.forEach((m, j) => m.className = j === i ? 'hl hl-current' : 'hl');
+    if (marks[i]) { marks[i].scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    searchCount.textContent = marks.length ? `${i+1}/${marks.length}` : '0';
+    markIdx = i;
+  }
+
+  function openSearch() {
+    searchWrap.classList.add('open');
+    searchBtn.style.display = 'none';
+    searchInput.focus();
+  }
+  function closeSearch() {
+    clearMarks();
+    searchWrap.classList.remove('open');
+    searchBtn.style.display = '';
+    searchInput.value = '';
+  }
+
+  searchBtn.addEventListener('click', openSearch);
+  searchClose.addEventListener('click', closeSearch);
+  searchNext.addEventListener('click', () => marks.length && goTo((markIdx + 1) % marks.length));
+  searchPrev.addEventListener('click', () => marks.length && goTo((markIdx - 1 + marks.length) % marks.length));
+
+  let debounceTimer;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => doSearch(searchInput.value.trim()), 200);
+  });
+  searchInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); marks.length && goTo(e.shiftKey ? (markIdx - 1 + marks.length) % marks.length : (markIdx + 1) % marks.length); }
+    if (e.key === 'Escape') closeSearch();
+  });
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'f') { e.preventDefault(); openSearch(); }
   });
 
   // back-to-top button
