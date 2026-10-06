@@ -1062,6 +1062,11 @@
   <span class="key">nvidia.com/mig.capable</span>: <span class="str">"true"</span></pre>
       </div>
 
+      <div class="caveat caveat-danger">
+        <strong>Mixed GPU types on one node — assignment is non-deterministic</strong>
+        The GPU Operator device plugin exposes all GPUs on a node as a fungible pool of <code>nvidia.com/gpu</code> units. It does <em>not</em> distinguish between individual GPU slots by VRAM size or model when assigning devices to pods. If a node contains mixed GPU models — e.g. some 8 GB and some 16 GB cards — there is no built-in mechanism to guarantee a pod gets the right one. A pod requesting <code>nvidia.com/gpu: 1</code> may land on either card. Node selectors using GFD labels (<code>nvidia.com/gpu.product</code>, <code>nvidia.com/gpu.memory</code>) target the <em>node</em>, not a specific slot within it. The operational rule: <strong>GPU nodes must be homogeneous</strong>. Each node pool should contain one GPU model only. Use separate node groups per GPU type and let taints + node selectors steer pods to the right pool.
+      </div>
+
       <h3 id="priority">Priority Classes + Preemption</h3>
       <p>High-priority inference pods preempt low-priority training jobs when GPU capacity is needed.</p>
       <div class="code-wrap">
