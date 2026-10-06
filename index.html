@@ -261,6 +261,25 @@
     font-size: 13px;
     color: var(--warn-fg);
     margin: 12px 0;
+    line-height: 1.6;
+  }
+  .caveat-danger {
+    background: color-mix(in srgb, #e05252 10%, var(--surface));
+    border-left-color: #e05252;
+    color: inherit;
+  }
+  .caveat-ok {
+    background: color-mix(in srgb, #76b900 8%, var(--surface));
+    border-left-color: #76b900;
+    color: inherit;
+  }
+  .caveat > strong:first-child {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    margin-bottom: 5px;
+    opacity: 0.75;
   }
 
   /* ── code blocks ── */
@@ -506,6 +525,7 @@
         </ul>
       </li>
       <li><a href="#dynmig">5 — Dynamic MIG</a></li>
+      <li><a href="#hybrid">Hybrid Approaches</a></li>
       <li><a href="#stack">6 — Recommended Stack</a></li>
       <li><a href="#vms">7 — VMs: Boon or Bust?</a>
         <ul class="toc-list toc-sub">
@@ -952,7 +972,10 @@
       <span class="key">timeSlicing</span>:
         <span class="key">replicas</span>: <span class="num">4</span>   <span class="cmt"># 4 pods share 1 physical GPU</span></pre>
       </div>
-      <div class="caveat">~20% ctx-switch overhead. No memory isolation — one pod OOMs, all pods on that GPU feel it.</div>
+      <div class="caveat caveat-danger">
+        <strong>Operational reality — no enforcement</strong>
+        Time-slicing is a scheduler fiction. The device plugin creates N virtual GPU entries, but there are <em>zero</em> enforcement mechanisms between them. Any pod can allocate all 80 GB of VRAM and all SMs simultaneously — there is no budget, no cgroup equivalent, nothing. A greedy (or buggy) pod exhausts VRAM on the physical GPU and all co-tenants OOM regardless of how small their request was. The NVIDIA driver does not enforce per-slice limits. K8s resource requests only count GPU <em>units</em>, not memory within a unit. Marketing material describes "shared access"; production reality is noisy-neighbor resource starvation. Reserve time-slicing for trusted dev/test workloads where VRAM consumption per pod is known and bounded. ~20% context-switch overhead is a secondary concern.
+      </div>
     </section>
 
     <!-- MIG -->
@@ -982,6 +1005,10 @@
           </tbody>
         </table>
       </div>
+      <div class="caveat caveat-ok">
+        <strong>What MIG actually enforces — in hardware</strong>
+        The A100/H100 firmware partitions the die into independent GPC (Graphics Processing Cluster) slices and dedicated HBM regions. Each MIG instance gets a fixed fraction of SMs, L2 cache, and memory bandwidth — all enforced by the GPU's MMU and SM scheduler in silicon, not software. One MIG tenant <em>cannot</em> access or exhaust another's VRAM or SMs regardless of what its workload does. This is the only NVIDIA sharing mode with genuine multi-tenant isolation and is the right choice anywhere resource guarantees matter.
+      </div>
     </section>
 
     <!-- MPS -->
@@ -993,6 +1020,10 @@
         <pre id="mps1"><span class="key">sharing</span>:
   <span class="key">mps</span>:
     <span class="key">replicas</span>: <span class="num">4</span></pre>
+      </div>
+      <div class="caveat caveat-danger">
+        <strong>Shared memory space — no isolation</strong>
+        MPS runs all CUDA clients through a single context in a shared address space. A process that over-allocates VRAM starves all other MPS clients on that GPU. Fault propagation is also broader: if one client segfaults, the MPS server crashes and all co-tenant processes on that GPU die simultaneously. Use MPS where workloads are trusted and the goal is to eliminate context-switch latency, not to provide resource guardrails.
       </div>
     </section>
 
@@ -1087,6 +1118,104 @@
       </div>
     </section>
 
+    <!-- HYBRID APPROACHES -->
+    <section class="section" id="hybrid">
+      <h2><span class="sec-num" style="font-size:10px;letter-spacing:.05em">Hyb</span> Hybrid Approaches</h2>
+      <p>The mechanisms above compose. The most useful production hybrid is <strong>vLLM + MIG</strong>: partition each GPU into hardware-isolated slices, then run an independent vLLM instance per slice. You get K8s scheduling flexibility, MIG's hard resource guarantees, and vLLM's continuous-batching throughput — simultaneously, with no tradeoff between them.</p>
+
+      <h3>vLLM + MIG — per-model isolation at scale</h3>
+      <p>Pick a MIG profile that fits your model's VRAM footprint, schedule one vLLM pod per MIG slice. Each pod sees an isolated GPU device with dedicated SMs and VRAM — noisy-neighbor exhaustion is impossible.</p>
+
+      <h4 style="margin:14px 0 8px;font-size:13px;color:var(--fg-muted)">Profile sizing guide (A100-80GB)</h4>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Model size (FP16)</th><th>MIG profile</th><th>Instances per GPU</th><th>Deployments on 8× A100</th></tr></thead>
+          <tbody>
+            <tr><td>Embedding / &lt;3B</td><td><code>1g.10gb</code></td><td>7</td><td>56</td></tr>
+            <tr><td>7B (Mistral, LLaMA-3-8B)</td><td><code>2g.20gb</code></td><td>3</td><td>24</td></tr>
+            <tr><td>13B</td><td><code>3g.40gb</code></td><td>2</td><td>16</td></tr>
+            <tr><td>70B (needs all 80 GB)</td><td><code>7g.80gb</code></td><td>1</td><td>8 (no MIG benefit)</td></tr>
+            <tr><td>70B+ (multi-GPU TP)</td><td>whole GPUs, no MIG</td><td>—</td><td>depends on TP width</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <figure class="diag" style="margin-top:20px">
+        <svg viewBox="0 0 700 240" role="img" aria-label="vLLM plus MIG: two A100 GPUs each partitioned into two 3g.40gb MIG slices, each slice running an independent vLLM instance serving a different model">
+          <defs>
+            <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><polygon points="0,0 8,4 0,8" fill="currentColor"/></marker>
+            <marker id="ahg" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><polygon points="0,0 8,4 0,8" fill="#76b900"/></marker>
+          </defs>
+          <!-- host frame -->
+          <rect class="diag-box-host" x="4" y="4" width="692" height="232" rx="5"/>
+          <text class="diag-text-sm diag-muted" x="16" y="19">physical host · 8× A100 (2 shown)</text>
+          <!-- GPU 0 outer -->
+          <rect class="diag-box-gpu" x="10" y="26" width="318" height="88" rx="4"/>
+          <text class="diag-label-sm" x="169" y="40" text-anchor="middle" fill="#76b900">A100-80GB · GPU 0</text>
+          <!-- MIG slices inside GPU 0 -->
+          <rect class="diag-box-mig" x="16" y="47" width="148" height="60" rx="2"/>
+          <text class="diag-text-sm" x="90" y="65" text-anchor="middle">3g.40gb</text>
+          <text class="diag-text-sm diag-muted" x="90" y="79" text-anchor="middle">40 GB · 3/7 SMs</text>
+          <text class="diag-text-sm diag-muted" x="90" y="100" text-anchor="middle">hardware isolated ↕</text>
+          <rect class="diag-box-mig" x="172" y="47" width="148" height="60" rx="2"/>
+          <text class="diag-text-sm" x="246" y="65" text-anchor="middle">3g.40gb</text>
+          <text class="diag-text-sm diag-muted" x="246" y="79" text-anchor="middle">40 GB · 3/7 SMs</text>
+          <text class="diag-text-sm diag-muted" x="246" y="100" text-anchor="middle">hardware isolated ↕</text>
+          <!-- GPU 1 outer -->
+          <rect class="diag-box-gpu" x="338" y="26" width="318" height="88" rx="4"/>
+          <text class="diag-label-sm" x="497" y="40" text-anchor="middle" fill="#76b900">A100-80GB · GPU 1</text>
+          <!-- MIG slices inside GPU 1 -->
+          <rect class="diag-box-mig" x="344" y="47" width="148" height="60" rx="2"/>
+          <text class="diag-text-sm" x="418" y="65" text-anchor="middle">3g.40gb</text>
+          <text class="diag-text-sm diag-muted" x="418" y="79" text-anchor="middle">40 GB · 3/7 SMs</text>
+          <text class="diag-text-sm diag-muted" x="418" y="100" text-anchor="middle">hardware isolated ↕</text>
+          <rect class="diag-box-mig" x="500" y="47" width="148" height="60" rx="2"/>
+          <text class="diag-text-sm" x="574" y="65" text-anchor="middle">3g.40gb</text>
+          <text class="diag-text-sm diag-muted" x="574" y="79" text-anchor="middle">40 GB · 3/7 SMs</text>
+          <text class="diag-text-sm diag-muted" x="574" y="100" text-anchor="middle">hardware isolated ↕</text>
+          <!-- "× 6 more GPUs" ellipsis -->
+          <text class="diag-text-sm diag-muted" x="668" y="72" text-anchor="middle">···</text>
+          <text class="diag-text-sm diag-muted" x="668" y="84" text-anchor="middle">×6</text>
+          <!-- arrows: MIG slices → vLLM pods below -->
+          <line class="diag-line-g" x1="90"  y1="114" x2="90"  y2="148" marker-end="url(#ahg)"/>
+          <line class="diag-line-g" x1="246" y1="114" x2="246" y2="148" marker-end="url(#ahg)"/>
+          <line class="diag-line-g" x1="418" y1="114" x2="418" y2="148" marker-end="url(#ahg)"/>
+          <line class="diag-line-g" x1="574" y1="114" x2="574" y2="148" marker-end="url(#ahg)"/>
+          <text class="diag-text-sm diag-muted" x="282" y="135" text-anchor="middle">nvidia.com/mig-3g.40gb: 1</text>
+          <!-- vLLM pods -->
+          <rect class="diag-box-vllm" x="16"  y="150" width="148" height="68" rx="3"/>
+          <text class="diag-label-sm" x="90"  y="170" text-anchor="middle">vLLM pod</text>
+          <text class="diag-text-sm diag-muted" x="90"  y="185" text-anchor="middle">llama-3-13b</text>
+          <text class="diag-text-sm diag-muted" x="90"  y="200" text-anchor="middle">TP=1 · 40 GB</text>
+          <rect class="diag-box-vllm" x="172" y="150" width="148" height="68" rx="3"/>
+          <text class="diag-label-sm" x="246" y="170" text-anchor="middle">vLLM pod</text>
+          <text class="diag-text-sm diag-muted" x="246" y="185" text-anchor="middle">mistral-7b-instruct</text>
+          <text class="diag-text-sm diag-muted" x="246" y="200" text-anchor="middle">TP=1 · 40 GB</text>
+          <rect class="diag-box-vllm" x="344" y="150" width="148" height="68" rx="3"/>
+          <text class="diag-label-sm" x="418" y="170" text-anchor="middle">vLLM pod</text>
+          <text class="diag-text-sm diag-muted" x="418" y="185" text-anchor="middle">codellama-13b</text>
+          <text class="diag-text-sm diag-muted" x="418" y="200" text-anchor="middle">TP=1 · 40 GB</text>
+          <rect class="diag-box-vllm" x="500" y="150" width="148" height="68" rx="3"/>
+          <text class="diag-label-sm" x="574" y="170" text-anchor="middle">vLLM pod</text>
+          <text class="diag-text-sm diag-muted" x="574" y="185" text-anchor="middle">embedding model</text>
+          <text class="diag-text-sm diag-muted" x="574" y="200" text-anchor="middle">TP=1 · 40 GB</text>
+        </svg>
+        <figcaption><strong>vLLM + MIG on 8× A100.</strong> Each GPU splits into 2× <code>3g.40gb</code> slices = 16 isolated vLLM deployments across the host. Each vLLM pod runs TP=1 (one MIG slice only) and gets guaranteed 40 GB VRAM + 3/7 of the SMs. Different models can share the same physical node with zero cross-model interference. K8s scales each deployment independently.</figcaption>
+      </figure>
+
+      <div class="caveat">
+        <strong>NVLink boundary — TP=1 limit</strong>
+        MIG instances cannot communicate over NVLink. Each vLLM runs <code>tensor_parallel_size=1</code>. A model that requires tensor parallelism across multiple GPUs — typically 70B+ at FP16, or any model that exceeds a single slice's VRAM — cannot be served by a MIG-sliced pod. For those models, use whole GPUs with <code>tensor_parallel_size=N</code> and MIG disabled on those nodes. You can run both modes across different node pools in the same cluster.
+      </div>
+
+      <h3>MIG + MPS within a slice</h3>
+      <p>Once a MIG slice is assigned to a pod, that pod can itself start an MPS daemon to multiplex multiple CUDA processes <em>within</em> the slice — running concurrent kernels without serialization, without surrendering the slice's hard VRAM floor. This stacks two levels of isolation: hardware boundary between slices, MPS concurrency within a slice. Useful when a slice is large enough to run several small inference replicas simultaneously and context-switch latency matters.</p>
+      <div class="caveat caveat-ok">
+        <strong>Isolation hierarchy</strong>
+        MIG enforces the outer boundary (slice cannot be exceeded by any workload). MPS adds concurrent execution within that boundary. The MIG guarantee holds regardless of MPS behavior: a runaway MPS client cannot consume another slice's VRAM.
+      </div>
+    </section>
+
     <!-- STACK -->
     <section class="section" id="stack">
       <h2><span class="sec-num">06</span> Recommended Stack</h2>
@@ -1100,9 +1229,12 @@
   <span class="tree-val">Volcano / JobSet</span>           <span class="tree-comment"># gang scheduling for distributed training</span>
 
 <span class="tree-key">Sharing strategy by workload:</span>
-  Dev / experimentation      <span class="tree-arrow">→</span> time-slicing (4–8× replicas)
-  Production inference       <span class="tree-arrow">→</span> MIG (A100/H100) or MPS
-  Distributed training       <span class="tree-arrow">→</span> full GPU + gang scheduling</div>
+  Dev / experimentation      <span class="tree-arrow">→</span> time-slicing (4–8× replicas, trusted workloads only)
+  Production inference       <span class="tree-arrow">→</span> MIG (A100/H100) — hardware-isolated, no noisy-neighbor
+  Multiple models, one host  <span class="tree-arrow">→</span> vLLM + MIG (one vLLM pod per MIG slice)
+  Latency-sensitive, trusted <span class="tree-arrow">→</span> MPS (concurrent kernels, no ctx-switch)
+  Distributed training       <span class="tree-arrow">→</span> full GPU + gang scheduling (no sharing)
+  70B+ inference             <span class="tree-arrow">→</span> whole GPUs, TP=8, no MIG</div>
 
       <h3>K8s Value-Add vs Bare-Metal / Hypervisor vGPU</h3>
       <div class="table-wrap">
