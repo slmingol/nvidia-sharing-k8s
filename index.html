@@ -403,6 +403,32 @@
 
   a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+  /* ── diagrams ── */
+  .diag-section { display: flex; flex-direction: column; gap: 32px; }
+  figure.diag { margin: 0; }
+  figure.diag svg { width: 100%; height: auto; display: block; overflow: visible; }
+  figure.diag figcaption { font-size: 12.5px; color: var(--fg-muted); margin-top: 10px; line-height: 1.6; padding-left: 10px; border-left: 2px solid var(--accent); }
+  figure.diag figcaption strong { color: var(--fg); }
+  .diag-box     { fill: var(--surface); stroke: currentColor; stroke-width: 1.5; }
+  .diag-box-gpu { fill: color-mix(in srgb, #76b900 18%, var(--surface)); stroke: #76b900; stroke-width: 1.5; }
+  .diag-box-mig { fill: color-mix(in srgb, #76b900 12%, var(--surface)); stroke: #76b900; stroke-width: 1; }
+  .diag-box-host{ fill: color-mix(in srgb, currentColor 3%, var(--bg)); stroke: currentColor; stroke-width: 1; stroke-dasharray: 5 3; opacity: 1; }
+  .diag-box-node{ fill: color-mix(in srgb, currentColor 5%, var(--surface)); stroke: currentColor; stroke-width: 1.2; stroke-dasharray: 4 3; }
+  .diag-box-pod { fill: color-mix(in srgb, #f0a500 15%, var(--surface)); stroke: #d49600; stroke-width: 1.5; }
+  .diag-box-vm  { fill: color-mix(in srgb, #6888ff 14%, var(--surface)); stroke: #6888ff; stroke-width: 1.5; }
+  .diag-box-op  { fill: color-mix(in srgb, #76b900 12%, var(--surface)); stroke: #76b900; stroke-width: 1.5; }
+  .diag-box-vllm{ fill: color-mix(in srgb, #76b900 16%, var(--surface)); stroke: #76b900; stroke-width: 2; }
+  .diag-box-hyp { fill: color-mix(in srgb, #e05252 10%, var(--surface)); stroke: #e05252; stroke-width: 1.5; }
+  .diag-box-vf  { fill: color-mix(in srgb, #6888ff 24%, var(--surface)); stroke: #6888ff; stroke-width: 1.5; }
+  .diag-line    { stroke: currentColor; fill: none; stroke-width: 1.5; }
+  .diag-line-g  { stroke: #76b900; fill: none; stroke-width: 2; }
+  .diag-line-b  { stroke: #6888ff; fill: none; stroke-width: 1.5; }
+  .diag-text    { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: currentColor; }
+  .diag-text-sm { font-family: 'IBM Plex Mono', monospace; font-size: 10px; fill: currentColor; }
+  .diag-label   { font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 600; fill: currentColor; }
+  .diag-label-sm{ font-family: 'IBM Plex Sans', sans-serif; font-size: 11px; font-weight: 600; fill: currentColor; }
+  .diag-muted   { opacity: 0.55; }
+
   /* ── next steps ── */
   .next-steps-list { display: flex; flex-direction: column; gap: 2px; }
   .next-step {
@@ -468,6 +494,7 @@
     <div class="toc-label">Contents</div>
     <ul class="toc-list" id="tocList">
       <li><a href="#mechanisms">Sharing Mechanisms</a></li>
+      <li><a href="#diagrams">Approach Diagrams</a></li>
       <li><a href="#timeslicing">1 — Time-Slicing</a></li>
       <li><a href="#mig">2 — MIG Partitioning</a></li>
       <li><a href="#mps">3 — MPS</a></li>
@@ -528,6 +555,382 @@
           <div class="mech-iso"><strong>Isolation:</strong> None — concurrent CUDA contexts</div>
           <div class="mech-use">Batch decode, embedding generation, idle-SM workloads</div>
         </div>
+      </div>
+    </section>
+
+    <!-- DIAGRAMS -->
+    <section class="section" id="diagrams">
+      <h2><span class="sec-num" style="font-size:10px;letter-spacing:.05em">Fig</span> Approach Diagrams</h2>
+      <p>Four ways to share 8 GPUs. Each diagram shows where isolation lives, what controls scheduling, and what a workload actually sees.</p>
+      <div class="diag-section">
+
+        <!-- DIAGRAM 1: vLLM bare metal -->
+        <figure class="diag">
+          <svg viewBox="0 0 700 235" role="img" aria-label="vLLM serving multiple clients across 8 GPUs using tensor parallelism on bare metal">
+            <defs>
+              <marker id="a1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><polygon points="0,0 8,4 0,8" fill="currentColor"/></marker>
+              <marker id="a1g" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><polygon points="0,0 8,4 0,8" fill="#76b900"/></marker>
+            </defs>
+            <!-- host frame -->
+            <rect class="diag-box-host" x="4" y="4" width="692" height="226" rx="5"/>
+            <text class="diag-text-sm diag-muted" x="16" y="19">bare metal host · 8× A100</text>
+            <!-- clients -->
+            <rect class="diag-box" x="16" y="68" width="76" height="26" rx="3"/>
+            <text class="diag-text" x="54" y="85" text-anchor="middle">client</text>
+            <rect class="diag-box" x="16" y="106" width="76" height="26" rx="3"/>
+            <text class="diag-text" x="54" y="123" text-anchor="middle">client</text>
+            <rect class="diag-box" x="16" y="144" width="76" height="26" rx="3"/>
+            <text class="diag-text" x="54" y="161" text-anchor="middle">client</text>
+            <!-- client → vLLM arrows (converging) -->
+            <line class="diag-line" x1="92" y1="81"  x2="144" y2="118" marker-end="url(#a1)"/>
+            <line class="diag-line" x1="92" y1="119" x2="144" y2="119" marker-end="url(#a1)"/>
+            <line class="diag-line" x1="92" y1="157" x2="144" y2="120" marker-end="url(#a1)"/>
+            <text class="diag-text-sm diag-muted" x="112" y="112" text-anchor="middle">HTTP</text>
+            <!-- vLLM box -->
+            <rect class="diag-box-vllm" x="147" y="52" width="148" height="138" rx="5"/>
+            <text class="diag-label" x="221" y="88" text-anchor="middle">vLLM</text>
+            <text class="diag-text-sm" x="221" y="106" text-anchor="middle">TP=8 · continuous batching</text>
+            <text class="diag-text-sm diag-muted" x="221" y="121" text-anchor="middle">single process</text>
+            <text class="diag-text-sm diag-muted" x="221" y="136" text-anchor="middle">all GPUs on every req</text>
+            <!-- response arrow back -->
+            <line class="diag-line" x1="147" y1="178" x2="92" y2="178" marker-end="url(#a1)"/>
+            <text class="diag-text-sm diag-muted" x="118" y="173" text-anchor="middle">resp</text>
+            <!-- tensor parallel bus -->
+            <line class="diag-line-g" x1="295" y1="121" x2="340" y2="121" marker-end="url(#a1g)"/>
+            <text class="diag-text-sm" x="317" y="113" text-anchor="middle" fill="#76b900">tensor</text>
+            <text class="diag-text-sm" x="317" y="131" text-anchor="middle" fill="#76b900">parallel</text>
+            <!-- vertical distribution bar -->
+            <rect fill="#76b900" opacity="0.22" x="343" y="44" width="7" height="158"/>
+            <line stroke="#76b900" stroke-width="1.2" x1="350" y1="75"  x2="360" y2="75"/>
+            <line stroke="#76b900" stroke-width="1.2" x1="350" y1="145" x2="360" y2="145"/>
+            <!-- GPU row 1: 0-3 → y=44, h=62 -->
+            <rect class="diag-box-gpu" x="360" y="44" width="72" height="62" rx="3"/>
+            <text class="diag-label-sm" x="396" y="70" text-anchor="middle">GPU 0</text>
+            <text class="diag-text-sm diag-muted" x="396" y="84" text-anchor="middle">80 GB</text>
+            <rect class="diag-box-gpu" x="440" y="44" width="72" height="62" rx="3"/>
+            <text class="diag-label-sm" x="476" y="70" text-anchor="middle">GPU 1</text>
+            <text class="diag-text-sm diag-muted" x="476" y="84" text-anchor="middle">80 GB</text>
+            <rect class="diag-box-gpu" x="520" y="44" width="72" height="62" rx="3"/>
+            <text class="diag-label-sm" x="556" y="70" text-anchor="middle">GPU 2</text>
+            <text class="diag-text-sm diag-muted" x="556" y="84" text-anchor="middle">80 GB</text>
+            <rect class="diag-box-gpu" x="600" y="44" width="72" height="62" rx="3"/>
+            <text class="diag-label-sm" x="636" y="70" text-anchor="middle">GPU 3</text>
+            <text class="diag-text-sm diag-muted" x="636" y="84" text-anchor="middle">80 GB</text>
+            <!-- GPU row 2: 4-7 → y=116, h=62 -->
+            <rect class="diag-box-gpu" x="360" y="116" width="72" height="62" rx="3"/>
+            <text class="diag-label-sm" x="396" y="142" text-anchor="middle">GPU 4</text>
+            <text class="diag-text-sm diag-muted" x="396" y="156" text-anchor="middle">80 GB</text>
+            <rect class="diag-box-gpu" x="440" y="116" width="72" height="62" rx="3"/>
+            <text class="diag-label-sm" x="476" y="142" text-anchor="middle">GPU 5</text>
+            <text class="diag-text-sm diag-muted" x="476" y="156" text-anchor="middle">80 GB</text>
+            <rect class="diag-box-gpu" x="520" y="116" width="72" height="62" rx="3"/>
+            <text class="diag-label-sm" x="556" y="142" text-anchor="middle">GPU 6</text>
+            <text class="diag-text-sm diag-muted" x="556" y="156" text-anchor="middle">80 GB</text>
+            <rect class="diag-box-gpu" x="600" y="116" width="72" height="62" rx="3"/>
+            <text class="diag-label-sm" x="636" y="142" text-anchor="middle">GPU 7</text>
+            <text class="diag-text-sm diag-muted" x="636" y="156" text-anchor="middle">80 GB</text>
+            <!-- NVLink bus -->
+            <rect fill="#76b900" opacity="0.32" x="360" y="182" width="312" height="9" rx="2"/>
+            <text class="diag-text-sm" x="516" y="206" text-anchor="middle" fill="#76b900">NVLink · 600 GB/s all-reduce</text>
+          </svg>
+          <figcaption><strong>vLLM on bare metal.</strong> One vLLM process claims all 8 GPUs. Every inference request enters a single HTTP endpoint, is batched by vLLM's continuous batching scheduler, and executed with tensor parallelism — meaning all 8 GPUs collaborate on every request simultaneously. No isolation between users; throughput maximized by keeping all SMs busy. NVLink handles the all-reduce between GPU pairs each forward pass.</figcaption>
+        </figure>
+
+        <!-- DIAGRAM 2: K8s / OCP with GPU Operator -->
+        <figure class="diag">
+          <svg viewBox="0 0 700 330" role="img" aria-label="OCP and Kubernetes GPU node with NVIDIA GPU Operator, node taints, and pods using tolerations and node selectors">
+            <defs>
+              <marker id="a2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><polygon points="0,0 8,4 0,8" fill="currentColor"/></marker>
+              <marker id="a2g" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><polygon points="0,0 8,4 0,8" fill="#76b900"/></marker>
+              <marker id="a2o" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><polygon points="0,0 8,4 0,8" fill="#d49600"/></marker>
+            </defs>
+            <!-- cluster frame -->
+            <rect class="diag-box-host" x="4" y="4" width="692" height="322" rx="5"/>
+            <text class="diag-text-sm diag-muted" x="16" y="19">OCP / K8s cluster</text>
+            <!-- GPU worker node frame -->
+            <rect class="diag-box-node" x="16" y="26" width="668" height="294" rx="4"/>
+            <text class="diag-label-sm" x="28" y="42" fill="currentColor">GPU Worker Node</text>
+            <text class="diag-text-sm diag-muted" x="434" y="42" text-anchor="middle">taint: nvidia.com/gpu=present:NoSchedule</text>
+            <!-- GPU Operator box -->
+            <rect class="diag-box-op" x="28" y="50" width="190" height="34" rx="3"/>
+            <text class="diag-label-sm" x="123" y="65" text-anchor="middle">GPU Operator</text>
+            <text class="diag-text-sm diag-muted" x="123" y="78" text-anchor="middle">device plugin · MIG mgr</text>
+            <!-- device plugin advertises -->
+            <line class="diag-line-g" x1="218" y1="67" x2="268" y2="67" marker-end="url(#a2g)"/>
+            <text class="diag-text-sm diag-muted" x="278" y="64">advertises nvidia.com/gpu:8</text>
+            <text class="diag-text-sm diag-muted" x="278" y="77">to K8s API server</text>
+            <!-- 4 pod boxes (each gets 2 GPUs) -->
+            <!-- Pod 0: x=28, w=155 -->
+            <rect class="diag-box-pod" x="28"  y="106" width="155" height="58" rx="3"/>
+            <text class="diag-label-sm" x="110" y="122" text-anchor="middle">Pod 0</text>
+            <text class="diag-text-sm" x="110" y="136" text-anchor="middle">gpu: 2</text>
+            <text class="diag-text-sm diag-muted" x="110" y="149" text-anchor="middle">tolerates NoSchedule</text>
+            <!-- Pod 1 -->
+            <rect class="diag-box-pod" x="191" y="106" width="155" height="58" rx="3"/>
+            <text class="diag-label-sm" x="269" y="122" text-anchor="middle">Pod 1</text>
+            <text class="diag-text-sm" x="269" y="136" text-anchor="middle">gpu: 2</text>
+            <text class="diag-text-sm diag-muted" x="269" y="149" text-anchor="middle">tolerates NoSchedule</text>
+            <!-- Pod 2 -->
+            <rect class="diag-box-pod" x="354" y="106" width="155" height="58" rx="3"/>
+            <text class="diag-label-sm" x="432" y="122" text-anchor="middle">Pod 2</text>
+            <text class="diag-text-sm" x="432" y="136" text-anchor="middle">gpu: 2</text>
+            <text class="diag-text-sm diag-muted" x="432" y="149" text-anchor="middle">tolerates NoSchedule</text>
+            <!-- Pod 3 -->
+            <rect class="diag-box-pod" x="517" y="106" width="155" height="58" rx="3"/>
+            <text class="diag-label-sm" x="595" y="122" text-anchor="middle">Pod 3</text>
+            <text class="diag-text-sm" x="595" y="136" text-anchor="middle">gpu: 2</text>
+            <text class="diag-text-sm diag-muted" x="595" y="149" text-anchor="middle">tolerates NoSchedule</text>
+            <!-- pod → GPU arrows (each pod → its 2 GPUs) -->
+            <line class="diag-line" stroke="#d49600" x1="110" y1="164" x2="110" y2="200" marker-end="url(#a2o)"/>
+            <line class="diag-line" stroke="#d49600" x1="269" y1="164" x2="269" y2="200" marker-end="url(#a2o)"/>
+            <line class="diag-line" stroke="#d49600" x1="432" y1="164" x2="432" y2="200" marker-end="url(#a2o)"/>
+            <line class="diag-line" stroke="#d49600" x1="595" y1="164" x2="595" y2="200" marker-end="url(#a2o)"/>
+            <text class="diag-text-sm diag-muted" x="144" y="186" text-anchor="middle">allocates</text>
+            <text class="diag-text-sm diag-muted" x="144" y="197" text-anchor="middle">2 GPUs</text>
+            <!-- 8 GPU boxes: y=200, h=56 -->
+            <!-- cols: 28,107,186,265,344,423,502,581 (w=71, gap=8) -->
+            <rect class="diag-box-gpu" x="28"  y="200" width="71" height="56" rx="3"/>
+            <text class="diag-label-sm" x="63"  y="224" text-anchor="middle">GPU 0</text>
+            <text class="diag-text-sm diag-muted" x="63"  y="238" text-anchor="middle">pod 0</text>
+            <rect class="diag-box-gpu" x="107" y="200" width="71" height="56" rx="3"/>
+            <text class="diag-label-sm" x="142" y="224" text-anchor="middle">GPU 1</text>
+            <text class="diag-text-sm diag-muted" x="142" y="238" text-anchor="middle">pod 0</text>
+            <rect class="diag-box-gpu" x="186" y="200" width="71" height="56" rx="3"/>
+            <text class="diag-label-sm" x="221" y="224" text-anchor="middle">GPU 2</text>
+            <text class="diag-text-sm diag-muted" x="221" y="238" text-anchor="middle">pod 1</text>
+            <rect class="diag-box-gpu" x="265" y="200" width="71" height="56" rx="3"/>
+            <text class="diag-label-sm" x="300" y="224" text-anchor="middle">GPU 3</text>
+            <text class="diag-text-sm diag-muted" x="300" y="238" text-anchor="middle">pod 1</text>
+            <rect class="diag-box-gpu" x="344" y="200" width="71" height="56" rx="3"/>
+            <text class="diag-label-sm" x="379" y="224" text-anchor="middle">GPU 4</text>
+            <text class="diag-text-sm diag-muted" x="379" y="238" text-anchor="middle">pod 2</text>
+            <rect class="diag-box-gpu" x="423" y="200" width="71" height="56" rx="3"/>
+            <text class="diag-label-sm" x="458" y="224" text-anchor="middle">GPU 5</text>
+            <text class="diag-text-sm diag-muted" x="458" y="238" text-anchor="middle">pod 2</text>
+            <rect class="diag-box-gpu" x="502" y="200" width="71" height="56" rx="3"/>
+            <text class="diag-label-sm" x="537" y="224" text-anchor="middle">GPU 6</text>
+            <text class="diag-text-sm diag-muted" x="537" y="238" text-anchor="middle">pod 3</text>
+            <rect class="diag-box-gpu" x="581" y="200" width="71" height="56" rx="3"/>
+            <text class="diag-label-sm" x="616" y="224" text-anchor="middle">GPU 7</text>
+            <text class="diag-text-sm diag-muted" x="616" y="238" text-anchor="middle">pod 3</text>
+            <!-- device plugin owns GPUs label -->
+            <text class="diag-text-sm" x="350" y="274" text-anchor="middle" fill="#76b900">device plugin: exclusive allocation per pod · no sharing within a GPU</text>
+          </svg>
+          <figcaption><strong>OCP / K8s with NVIDIA GPU Operator.</strong> The node carries a taint (<code>nvidia.com/gpu=present:NoSchedule</code>) that blocks non-GPU pods from landing here. GPU Operator deploys the device plugin, which advertises 8 schedulable GPU resources to the API server. Pods declare a toleration and a resource request (<code>nvidia.com/gpu: 2</code>); the scheduler matches taint to toleration and places the pod; the device plugin allocates specific GPU device files. Each GPU is exclusively owned by one pod — no time-sharing at the GPU level. Node selectors (<code>nvidia.com/gpu.product: A100</code>) let pods target specific GPU hardware.</figcaption>
+        </figure>
+
+        <!-- DIAGRAM 3: MIG -->
+        <figure class="diag">
+          <svg viewBox="0 0 700 265" role="img" aria-label="MIG partitioning of one A100 GPU into 7 hardware-isolated slices, each assigned to a separate pod">
+            <defs>
+              <marker id="a3g" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><polygon points="0,0 8,4 0,8" fill="#76b900"/></marker>
+              <marker id="a3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><polygon points="0,0 8,4 0,8" fill="currentColor"/></marker>
+            </defs>
+            <!-- GPU Operator / MIG Manager -->
+            <rect class="diag-box-op" x="10" y="10" width="185" height="34" rx="3"/>
+            <text class="diag-label-sm" x="103" y="25" text-anchor="middle">GPU Operator</text>
+            <text class="diag-text-sm diag-muted" x="103" y="38" text-anchor="middle">MIG Manager</text>
+            <!-- arrow: MIG Manager → A100 -->
+            <line class="diag-line-g" x1="103" y1="44" x2="103" y2="64" marker-end="url(#a3g)"/>
+            <text class="diag-text-sm diag-muted" x="196" y="58">applies profile: all-1g.10gb</text>
+            <!-- A100 physical GPU outer bar -->
+            <rect class="diag-box-gpu" x="10" y="66" width="680" height="90" rx="4"/>
+            <text class="diag-label-sm" x="350" y="82" text-anchor="middle" fill="#76b900">A100-80GB · hardware MIG partitioned</text>
+            <!-- 7 MIG slices inside the bar (x=18, slices w=92, gap=4) -->
+            <!-- 7×92 + 6×4 = 644+24=668. start x=16, end=684. OK -->
+            <rect class="diag-box-mig" x="16"  y="88" width="92" height="60" rx="2"/>
+            <text class="diag-text-sm" x="62"  y="108" text-anchor="middle">1g.10gb</text>
+            <text class="diag-text-sm diag-muted" x="62"  y="121" text-anchor="middle">1/7 SMs</text>
+            <text class="diag-text-sm diag-muted" x="62"  y="134" text-anchor="middle">10 GB HBM</text>
+            <rect class="diag-box-mig" x="112" y="88" width="92" height="60" rx="2"/>
+            <text class="diag-text-sm" x="158" y="108" text-anchor="middle">1g.10gb</text>
+            <text class="diag-text-sm diag-muted" x="158" y="121" text-anchor="middle">1/7 SMs</text>
+            <text class="diag-text-sm diag-muted" x="158" y="134" text-anchor="middle">10 GB HBM</text>
+            <rect class="diag-box-mig" x="208" y="88" width="92" height="60" rx="2"/>
+            <text class="diag-text-sm" x="254" y="108" text-anchor="middle">1g.10gb</text>
+            <text class="diag-text-sm diag-muted" x="254" y="121" text-anchor="middle">1/7 SMs</text>
+            <text class="diag-text-sm diag-muted" x="254" y="134" text-anchor="middle">10 GB HBM</text>
+            <rect class="diag-box-mig" x="304" y="88" width="92" height="60" rx="2"/>
+            <text class="diag-text-sm" x="350" y="108" text-anchor="middle">1g.10gb</text>
+            <text class="diag-text-sm diag-muted" x="350" y="121" text-anchor="middle">1/7 SMs</text>
+            <text class="diag-text-sm diag-muted" x="350" y="134" text-anchor="middle">10 GB HBM</text>
+            <rect class="diag-box-mig" x="400" y="88" width="92" height="60" rx="2"/>
+            <text class="diag-text-sm" x="446" y="108" text-anchor="middle">1g.10gb</text>
+            <text class="diag-text-sm diag-muted" x="446" y="121" text-anchor="middle">1/7 SMs</text>
+            <text class="diag-text-sm diag-muted" x="446" y="134" text-anchor="middle">10 GB HBM</text>
+            <rect class="diag-box-mig" x="496" y="88" width="92" height="60" rx="2"/>
+            <text class="diag-text-sm" x="542" y="108" text-anchor="middle">1g.10gb</text>
+            <text class="diag-text-sm diag-muted" x="542" y="121" text-anchor="middle">1/7 SMs</text>
+            <text class="diag-text-sm diag-muted" x="542" y="134" text-anchor="middle">10 GB HBM</text>
+            <rect class="diag-box-mig" x="592" y="88" width="92" height="60" rx="2"/>
+            <text class="diag-text-sm" x="638" y="108" text-anchor="middle">1g.10gb</text>
+            <text class="diag-text-sm diag-muted" x="638" y="121" text-anchor="middle">1/7 SMs</text>
+            <text class="diag-text-sm diag-muted" x="638" y="134" text-anchor="middle">10 GB HBM</text>
+            <!-- hardware isolation annotation -->
+            <text class="diag-text-sm" x="350" y="167" text-anchor="middle" fill="#76b900">↑ hardware boundary — no cross-slice memory or SM access</text>
+            <!-- arrows: each slice → pod below -->
+            <line class="diag-line" x1="62"  y1="156" x2="62"  y2="190" marker-end="url(#a3)"/>
+            <line class="diag-line" x1="158" y1="156" x2="158" y2="190" marker-end="url(#a3)"/>
+            <line class="diag-line" x1="254" y1="156" x2="254" y2="190" marker-end="url(#a3)"/>
+            <line class="diag-line" x1="350" y1="156" x2="350" y2="190" marker-end="url(#a3)"/>
+            <line class="diag-line" x1="446" y1="156" x2="446" y2="190" marker-end="url(#a3)"/>
+            <line class="diag-line" x1="542" y1="156" x2="542" y2="190" marker-end="url(#a3)"/>
+            <line class="diag-line" x1="638" y1="156" x2="638" y2="190" marker-end="url(#a3)"/>
+            <!-- 7 pod boxes: y=190, h=52, same x/w as slices -->
+            <rect class="diag-box-pod" x="16"  y="190" width="92" height="52" rx="3"/>
+            <text class="diag-label-sm" x="62"  y="210" text-anchor="middle">Pod 0</text>
+            <text class="diag-text-sm diag-muted" x="62"  y="224" text-anchor="middle">mig-1g.10gb</text>
+            <rect class="diag-box-pod" x="112" y="190" width="92" height="52" rx="3"/>
+            <text class="diag-label-sm" x="158" y="210" text-anchor="middle">Pod 1</text>
+            <text class="diag-text-sm diag-muted" x="158" y="224" text-anchor="middle">mig-1g.10gb</text>
+            <rect class="diag-box-pod" x="208" y="190" width="92" height="52" rx="3"/>
+            <text class="diag-label-sm" x="254" y="210" text-anchor="middle">Pod 2</text>
+            <text class="diag-text-sm diag-muted" x="254" y="224" text-anchor="middle">mig-1g.10gb</text>
+            <rect class="diag-box-pod" x="304" y="190" width="92" height="52" rx="3"/>
+            <text class="diag-label-sm" x="350" y="210" text-anchor="middle">Pod 3</text>
+            <text class="diag-text-sm diag-muted" x="350" y="224" text-anchor="middle">mig-1g.10gb</text>
+            <rect class="diag-box-pod" x="400" y="190" width="92" height="52" rx="3"/>
+            <text class="diag-label-sm" x="446" y="210" text-anchor="middle">Pod 4</text>
+            <text class="diag-text-sm diag-muted" x="446" y="224" text-anchor="middle">mig-1g.10gb</text>
+            <rect class="diag-box-pod" x="496" y="190" width="92" height="52" rx="3"/>
+            <text class="diag-label-sm" x="542" y="210" text-anchor="middle">Pod 5</text>
+            <text class="diag-text-sm diag-muted" x="542" y="224" text-anchor="middle">mig-1g.10gb</text>
+            <rect class="diag-box-pod" x="592" y="190" width="92" height="52" rx="3"/>
+            <text class="diag-label-sm" x="638" y="210" text-anchor="middle">Pod 6</text>
+            <text class="diag-text-sm diag-muted" x="638" y="224" text-anchor="middle">mig-1g.10gb</text>
+          </svg>
+          <figcaption><strong>MIG partitioning on one A100.</strong> The GPU Operator's MIG Manager applies a profile (<code>all-1g.10gb</code>) that instructs the A100's firmware to partition the die into 7 independent instances. Each instance gets a dedicated 1/7 of the streaming multiprocessors and 10 GB of HBM — enforced in silicon, not software. The device plugin advertises each instance as a separate resource (<code>nvidia.com/mig-1g.10gb</code>). Pods claim one instance each and get guaranteed, noise-free compute. One pod cannot see or affect another's memory. Profiles can be mixed (<code>2g.20gb</code>, <code>3g.40gb</code>) to match workload sizes.</figcaption>
+        </figure>
+
+        <!-- DIAGRAM 4: VM + SR-IOV -->
+        <figure class="diag">
+          <svg viewBox="0 0 700 340" role="img" aria-label="SR-IOV GPU passthrough to VMs: physical functions create virtual functions that bypass the hypervisor for direct GPU access">
+            <defs>
+              <marker id="a4" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><polygon points="0,0 8,4 0,8" fill="currentColor"/></marker>
+              <marker id="a4b" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><polygon points="0,0 8,4 0,8" fill="#6888ff"/></marker>
+            </defs>
+            <!-- host frame -->
+            <rect class="diag-box-host" x="4" y="4" width="692" height="332" rx="5"/>
+            <text class="diag-text-sm diag-muted" x="16" y="19">physical host · KVM/QEMU</text>
+            <!-- 8 GPU physical functions (PFs): y=26, h=52 -->
+            <!-- cols: 18,107,196,285,374,463,552,613  w=80, gap=9 -->
+            <!-- 8×80+7×9=640+63=703 — too wide. Use w=73,gap=8: 8×73+7×8=584+56=640. start x=30, end=670 -->
+            <rect class="diag-box-gpu" x="30"  y="26" width="73" height="52" rx="3"/>
+            <text class="diag-label-sm" x="66"  y="47" text-anchor="middle">GPU PF 0</text>
+            <text class="diag-text-sm diag-muted" x="66"  y="62" text-anchor="middle">PCIe PF</text>
+            <rect class="diag-box-gpu" x="111" y="26" width="73" height="52" rx="3"/>
+            <text class="diag-label-sm" x="147" y="47" text-anchor="middle">GPU PF 1</text>
+            <text class="diag-text-sm diag-muted" x="147" y="62" text-anchor="middle">PCIe PF</text>
+            <rect class="diag-box-gpu" x="192" y="26" width="73" height="52" rx="3"/>
+            <text class="diag-label-sm" x="228" y="47" text-anchor="middle">GPU PF 2</text>
+            <text class="diag-text-sm diag-muted" x="228" y="62" text-anchor="middle">PCIe PF</text>
+            <rect class="diag-box-gpu" x="273" y="26" width="73" height="52" rx="3"/>
+            <text class="diag-label-sm" x="309" y="47" text-anchor="middle">GPU PF 3</text>
+            <text class="diag-text-sm diag-muted" x="309" y="62" text-anchor="middle">PCIe PF</text>
+            <rect class="diag-box-gpu" x="354" y="26" width="73" height="52" rx="3"/>
+            <text class="diag-label-sm" x="390" y="47" text-anchor="middle">GPU PF 4</text>
+            <text class="diag-text-sm diag-muted" x="390" y="62" text-anchor="middle">PCIe PF</text>
+            <rect class="diag-box-gpu" x="435" y="26" width="73" height="52" rx="3"/>
+            <text class="diag-label-sm" x="471" y="47" text-anchor="middle">GPU PF 5</text>
+            <text class="diag-text-sm diag-muted" x="471" y="62" text-anchor="middle">PCIe PF</text>
+            <rect class="diag-box-gpu" x="516" y="26" width="73" height="52" rx="3"/>
+            <text class="diag-label-sm" x="552" y="47" text-anchor="middle">GPU PF 6</text>
+            <text class="diag-text-sm diag-muted" x="552" y="62" text-anchor="middle">PCIe PF</text>
+            <rect class="diag-box-gpu" x="597" y="26" width="73" height="52" rx="3"/>
+            <text class="diag-label-sm" x="633" y="47" text-anchor="middle">GPU PF 7</text>
+            <text class="diag-text-sm diag-muted" x="633" y="62" text-anchor="middle">PCIe PF</text>
+            <!-- SR-IOV annotation + arrows PF→VF -->
+            <text class="diag-text-sm" x="350" y="93" text-anchor="middle" fill="#6888ff">SR-IOV creates Virtual Functions (VFs) — one VF per GPU, assigned via IOMMU</text>
+            <line class="diag-line-b" x1="66"  y1="78" x2="66"  y2="108" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="147" y1="78" x2="147" y2="108" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="228" y1="78" x2="228" y2="108" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="309" y1="78" x2="309" y2="108" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="390" y1="78" x2="390" y2="108" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="471" y1="78" x2="471" y2="108" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="552" y1="78" x2="552" y2="108" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="633" y1="78" x2="633" y2="108" marker-end="url(#a4b)"/>
+            <!-- 8 VF boxes: y=110, h=34 -->
+            <rect class="diag-box-vf" x="30"  y="110" width="73" height="34" rx="3"/>
+            <text class="diag-text-sm" x="66"  y="131" text-anchor="middle">VF 0</text>
+            <rect class="diag-box-vf" x="111" y="110" width="73" height="34" rx="3"/>
+            <text class="diag-text-sm" x="147" y="131" text-anchor="middle">VF 1</text>
+            <rect class="diag-box-vf" x="192" y="110" width="73" height="34" rx="3"/>
+            <text class="diag-text-sm" x="228" y="131" text-anchor="middle">VF 2</text>
+            <rect class="diag-box-vf" x="273" y="110" width="73" height="34" rx="3"/>
+            <text class="diag-text-sm" x="309" y="131" text-anchor="middle">VF 3</text>
+            <rect class="diag-box-vf" x="354" y="110" width="73" height="34" rx="3"/>
+            <text class="diag-text-sm" x="390" y="131" text-anchor="middle">VF 4</text>
+            <rect class="diag-box-vf" x="435" y="110" width="73" height="34" rx="3"/>
+            <text class="diag-text-sm" x="471" y="131" text-anchor="middle">VF 5</text>
+            <rect class="diag-box-vf" x="516" y="110" width="73" height="34" rx="3"/>
+            <text class="diag-text-sm" x="552" y="131" text-anchor="middle">VF 6</text>
+            <rect class="diag-box-vf" x="597" y="110" width="73" height="34" rx="3"/>
+            <text class="diag-text-sm" x="633" y="131" text-anchor="middle">VF 7</text>
+            <!-- hypervisor band -->
+            <rect class="diag-box-hyp" x="16" y="154" width="668" height="22" rx="3"/>
+            <text class="diag-label-sm" x="350" y="169" text-anchor="middle" fill="#e05252">Hypervisor — not in the GPU data path after VF assignment</text>
+            <!-- arrows VF → VM (through hypervisor bar) -->
+            <line class="diag-line-b" x1="66"  y1="144" x2="66"  y2="188" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="147" y1="144" x2="147" y2="188" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="228" y1="144" x2="228" y2="188" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="309" y1="144" x2="309" y2="188" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="390" y1="144" x2="390" y2="188" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="471" y1="144" x2="471" y2="188" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="552" y1="144" x2="552" y2="188" marker-end="url(#a4b)"/>
+            <line class="diag-line-b" x1="633" y1="144" x2="633" y2="188" marker-end="url(#a4b)"/>
+            <!-- 8 VM boxes: y=188, h=100 -->
+            <rect class="diag-box-vm" x="30"  y="188" width="73" height="100" rx="3"/>
+            <text class="diag-label-sm" x="66"  y="208" text-anchor="middle">VM 0</text>
+            <text class="diag-text-sm diag-muted" x="66"  y="224" text-anchor="middle">VF 0</text>
+            <text class="diag-text-sm diag-muted" x="66"  y="238" text-anchor="middle">direct</text>
+            <text class="diag-text-sm diag-muted" x="66"  y="251" text-anchor="middle">DMA</text>
+            <text class="diag-text-sm diag-muted" x="66"  y="279" text-anchor="middle">vGPU drv</text>
+            <rect class="diag-box-vm" x="111" y="188" width="73" height="100" rx="3"/>
+            <text class="diag-label-sm" x="147" y="208" text-anchor="middle">VM 1</text>
+            <text class="diag-text-sm diag-muted" x="147" y="224" text-anchor="middle">VF 1</text>
+            <text class="diag-text-sm diag-muted" x="147" y="238" text-anchor="middle">direct</text>
+            <text class="diag-text-sm diag-muted" x="147" y="251" text-anchor="middle">DMA</text>
+            <text class="diag-text-sm diag-muted" x="147" y="279" text-anchor="middle">vGPU drv</text>
+            <rect class="diag-box-vm" x="192" y="188" width="73" height="100" rx="3"/>
+            <text class="diag-label-sm" x="228" y="208" text-anchor="middle">VM 2</text>
+            <text class="diag-text-sm diag-muted" x="228" y="224" text-anchor="middle">VF 2</text>
+            <text class="diag-text-sm diag-muted" x="228" y="238" text-anchor="middle">direct</text>
+            <text class="diag-text-sm diag-muted" x="228" y="251" text-anchor="middle">DMA</text>
+            <text class="diag-text-sm diag-muted" x="228" y="279" text-anchor="middle">vGPU drv</text>
+            <rect class="diag-box-vm" x="273" y="188" width="73" height="100" rx="3"/>
+            <text class="diag-label-sm" x="309" y="208" text-anchor="middle">VM 3</text>
+            <text class="diag-text-sm diag-muted" x="309" y="224" text-anchor="middle">VF 3</text>
+            <text class="diag-text-sm diag-muted" x="309" y="238" text-anchor="middle">direct</text>
+            <text class="diag-text-sm diag-muted" x="309" y="251" text-anchor="middle">DMA</text>
+            <text class="diag-text-sm diag-muted" x="309" y="279" text-anchor="middle">vGPU drv</text>
+            <rect class="diag-box-vm" x="354" y="188" width="73" height="100" rx="3"/>
+            <text class="diag-label-sm" x="390" y="208" text-anchor="middle">VM 4</text>
+            <text class="diag-text-sm diag-muted" x="390" y="224" text-anchor="middle">VF 4</text>
+            <text class="diag-text-sm diag-muted" x="390" y="238" text-anchor="middle">direct</text>
+            <text class="diag-text-sm diag-muted" x="390" y="251" text-anchor="middle">DMA</text>
+            <text class="diag-text-sm diag-muted" x="390" y="279" text-anchor="middle">vGPU drv</text>
+            <rect class="diag-box-vm" x="435" y="188" width="73" height="100" rx="3"/>
+            <text class="diag-label-sm" x="471" y="208" text-anchor="middle">VM 5</text>
+            <text class="diag-text-sm diag-muted" x="471" y="224" text-anchor="middle">VF 5</text>
+            <text class="diag-text-sm diag-muted" x="471" y="238" text-anchor="middle">direct</text>
+            <text class="diag-text-sm diag-muted" x="471" y="251" text-anchor="middle">DMA</text>
+            <text class="diag-text-sm diag-muted" x="471" y="279" text-anchor="middle">vGPU drv</text>
+            <rect class="diag-box-vm" x="516" y="188" width="73" height="100" rx="3"/>
+            <text class="diag-label-sm" x="552" y="208" text-anchor="middle">VM 6</text>
+            <text class="diag-text-sm diag-muted" x="552" y="224" text-anchor="middle">VF 6</text>
+            <text class="diag-text-sm diag-muted" x="552" y="238" text-anchor="middle">direct</text>
+            <text class="diag-text-sm diag-muted" x="552" y="251" text-anchor="middle">DMA</text>
+            <text class="diag-text-sm diag-muted" x="552" y="279" text-anchor="middle">vGPU drv</text>
+            <rect class="diag-box-vm" x="597" y="188" width="73" height="100" rx="3"/>
+            <text class="diag-label-sm" x="633" y="208" text-anchor="middle">VM 7</text>
+            <text class="diag-text-sm diag-muted" x="633" y="224" text-anchor="middle">VF 7</text>
+            <text class="diag-text-sm diag-muted" x="633" y="238" text-anchor="middle">direct</text>
+            <text class="diag-text-sm diag-muted" x="633" y="251" text-anchor="middle">DMA</text>
+            <text class="diag-text-sm diag-muted" x="633" y="279" text-anchor="middle">vGPU drv</text>
+          </svg>
+          <figcaption><strong>VM + SR-IOV GPU passthrough.</strong> Each physical GPU exposes a PCIe Physical Function (PF). SR-IOV creates one or more Virtual Functions (VFs) per PF; each VF is a lightweight PCIe endpoint with its own BAR space. The hypervisor assigns VFs to VMs via IOMMU — after that initial assignment, GPU DMA goes directly between the VM's memory and the GPU without any hypervisor involvement in the data path. Each VM runs a guest vGPU driver and sees the GPU as a native device. Isolation is enforced by IOMMU page tables: a VM cannot address memory outside its assigned VF. Cost: requires NVIDIA vGPU license for the host driver stack.</figcaption>
+        </figure>
+
       </div>
     </section>
 
