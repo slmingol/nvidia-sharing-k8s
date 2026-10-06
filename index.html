@@ -527,6 +527,7 @@
       </li>
       <li><a href="#dynmig">5 — Dynamic MIG</a></li>
       <li><a href="#hybrid">Hybrid Approaches</a></li>
+      <li><a href="#vram-isolation">VRAM Isolation Landscape</a></li>
       <li><a href="#triton">Triton vs. vLLM</a></li>
       <li><a href="#stack">6 — Recommended Stack</a></li>
       <li><a href="#vms">7 — VMs: Boon or Bust?</a>
@@ -1278,6 +1279,62 @@
       <div class="caveat caveat-ok">
         <strong>Isolation hierarchy</strong>
         MIG enforces the outer boundary (slice cannot be exceeded by any workload). MPS adds concurrent execution within that boundary. The MIG guarantee holds regardless of MPS behavior: a runaway MPS client cannot consume another slice's VRAM.
+      </div>
+    </section>
+
+    <!-- VRAM ISOLATION LANDSCAPE -->
+    <section class="section" id="vram-isolation">
+      <h2><span class="sec-num" style="font-size:10px;letter-spacing:.05em">ISO</span> VRAM Isolation Landscape</h2>
+      <p>Not all GPU sharing approaches provide VRAM isolation. This matters operationally: without it, a greedy or buggy workload can exhaust all GPU memory and take down every co-tenant on that device.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Approach</th><th>VRAM isolation</th><th>Strength</th><th>Hardware requirement</th></tr></thead>
+          <tbody>
+            <tr><td>MIG</td><td>Hardware</td><td>Hard — GPU MMU enforces in silicon</td><td>NVIDIA Ampere+ (A100, H100, A30)</td></tr>
+            <tr><td>AMD NPS4 (MI300X)</td><td>Hardware</td><td>Hard — HBM physically partitioned</td><td>AMD MI300X / MI325X only</td></tr>
+            <tr><td>SR-IOV / VM passthrough</td><td>Hardware (IOMMU)</td><td>Hard — VMs only, not pods</td><td>Any GPU with SR-IOV + hypervisor</td></tr>
+            <tr><td>K8s exclusive GPU per pod</td><td>Hardware</td><td>Hard — pod owns entire device</td><td>Any GPU; not sub-GPU sharing</td></tr>
+            <tr><td>DRA (whole GPU)</td><td>Hardware</td><td>Hard — specific device assigned to pod</td><td>Any GPU; K8s ≥ 1.34; not sub-GPU splitting</td></tr>
+            <tr><td>NVIDIA MPS pinned limits</td><td>Daemon (userspace)</td><td>Soft-medium — MPS server enforces caps; shared fault domain</td><td>Volta+, CUDA 11.5+, NVIDIA only</td></tr>
+            <tr><td>HAMi</td><td>CUDA shim</td><td>Soft — bypassed if workload avoids CUDA calls</td><td>NVIDIA, AMD, Ascend (any K8s ≥ 1.16)</td></tr>
+            <tr><td><code>dmem</code> cgroup controller</td><td>Kernel</td><td>Hard — but no K8s/runc wiring yet</td><td>Intel xe (Linux ≥ 6.14), AMD (≥ 6.15); no NVIDIA proprietary</td></tr>
+            <tr><td>Time-slicing</td><td>None</td><td>—</td><td>—</td></tr>
+            <tr><td>MPS (no limits configured)</td><td>None</td><td>—</td><td>—</td></tr>
+            <tr><td>Triton concurrent models</td><td>None</td><td>—</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:20px">Non-MIG options in detail</h3>
+
+      <h4 style="margin:14px 0 6px;font-size:13px;color:var(--fg-muted)">NVIDIA MPS pinned memory limits (Volta+)</h4>
+      <p style="font-size:13.5px;line-height:1.7">Set per-client VRAM caps inside the MPS daemon. Already wired into the k8s-device-plugin MPS sharing mode (splits evenly across replicas) and the NVIDIA DRA driver (<code>MpsConfig.DefaultPinnedDeviceMemoryLimit</code>). GKE supports it natively.</p>
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">bash — MPS daemon config</span><button class="copy-btn" data-target="mps-vram">Copy</button></div>
+        <pre id="mps-vram"><span class="cmt"># per-client cap set in MPS daemon</span>
+echo "set_default_device_pinned_mem_limit 0 4096m" | nvidia-cuda-mps-control
+
+<span class="cmt"># or via environment variable before launching client</span>
+CUDA_MPS_PINNED_DEVICE_MEM_LIMIT="0=4096m" python inference.py</pre>
+      </div>
+      <div class="caveat">
+        <strong>Shared fault domain</strong>
+        MPS clients share a CUDA context. A fatal fault (illegal memory access, driver crash) in one client kills all co-located MPS clients simultaneously. The VRAM cap is enforced by the MPS daemon process — if it crashes, caps are gone. Not equivalent to MIG's hardware boundary.
+      </div>
+
+      <h4 style="margin:14px 0 6px;font-size:13px;color:var(--fg-muted)">AMD MI300X — NPS4 memory partitioning</h4>
+      <p style="font-size:13.5px;line-height:1.7">The MI300X and MI325X support Non-Uniform Memory Access Partitioning (NPS4), which physically splits the 192 GB HBM stack into 4 × 48 GB regions. Combined with CPX (Compute Partitioning), up to 64 hardware partitions per 8-GPU node are possible. The AMD GPU Operator's Device Config Manager applies profiles declaratively; supported on OpenShift. This is the AMD hardware equivalent of MIG, limited to MI300-class GPUs.</p>
+      <div class="caveat caveat-ok">
+        <strong>Production-ready on OCP</strong>
+        AMD GPU Operator + Device Config Manager handles partition setup and exposes slices as schedulable K8s resources. Consumer and Radeon cards have no equivalent. AMD MxGPU SR-IOV exists but is VM-only.
+      </div>
+
+      <h4 style="margin:14px 0 6px;font-size:13px;color:var(--fg-muted)"><code>dmem</code> cgroup controller (Linux ≥ 6.14)</h4>
+      <p style="font-size:13.5px;line-height:1.7">A kernel-level VRAM cgroup with min/low/max semantics identical to the memory cgroup. Merged for Intel <code>xe</code> in Linux 6.14; AMD <code>amdgpu</code> support targeting 6.15/6.16; nouveau patch on mailing list. Does <strong>not</strong> work with the NVIDIA proprietary driver. No runc, containerd, or K8s wiring exists yet — cgroup files must be set manually via an NRI plugin or privileged DaemonSet. Known gaps: <code>hipMallocAsync</code> pools spill uncapped into system RAM; lowering <code>dmem.max</code> does not reclaim already-allocated memory. HAMi is evaluating <code>dmem</code> as its AMD backend.</p>
+      <div class="caveat caveat-danger">
+        <strong>Experimental — no K8s integration</strong>
+        Not usable in production today without significant operator work. Watch HAMi and the amdgpu driver for when this lands as a first-class K8s resource.
       </div>
     </section>
 
