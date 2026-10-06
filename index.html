@@ -423,6 +423,29 @@
 
   a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+  /* ── back to top ── */
+  #btt {
+    position: fixed;
+    bottom: 28px;
+    right: 24px;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    color: var(--fg-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s, background .15s, color .15s;
+    z-index: 200;
+  }
+  #btt.btt-visible { opacity: 1; pointer-events: auto; }
+  #btt:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
   /* ── references ── */
   .ref-list { margin: 8px 0 16px 18px; display: flex; flex-direction: column; gap: 7px; }
   .ref-list li { font-size: 13.5px; line-height: 1.6; }
@@ -1635,6 +1658,12 @@ helm install gpu-operator nvidia/gpu-operator \
   </main>
 </div>
 
+<button id="btt" aria-label="Back to top" title="Back to top">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="18 15 12 9 6 15"/>
+  </svg>
+</button>
+
 <script>
   // theme toggle
   const btn = document.getElementById('themeBtn');
@@ -1687,6 +1716,13 @@ helm install gpu-operator nvidia/gpu-operator \
     });
   }, { rootMargin: '-20% 0px -70% 0px' });
   sections.forEach(s => obs.observe(s));
+
+  // back-to-top button
+  const btt = document.getElementById('btt');
+  window.addEventListener('scroll', () => {
+    btt.classList.toggle('btt-visible', window.scrollY > 400);
+  }, { passive: true });
+  btt.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 </script>
 </body>
 </html>
