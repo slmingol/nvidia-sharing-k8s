@@ -1067,6 +1067,45 @@
         The GPU Operator device plugin exposes all GPUs on a node as a fungible pool of <code>nvidia.com/gpu</code> units. It does <em>not</em> distinguish between individual GPU slots by VRAM size or model when assigning devices to pods. If a node contains mixed GPU models — e.g. some 8 GB and some 16 GB cards — there is no built-in mechanism to guarantee a pod gets the right one. A pod requesting <code>nvidia.com/gpu: 1</code> may land on either card. Node selectors using GFD labels (<code>nvidia.com/gpu.product</code>, <code>nvidia.com/gpu.memory</code>) target the <em>node</em>, not a specific slot within it. The operational rule: <strong>GPU nodes must be homogeneous</strong>. Each node pool should contain one GPU model only. Use separate node groups per GPU type and let taints + node selectors steer pods to the right pool.
       </div>
 
+      <div class="caveat caveat-ok">
+        <strong>Projects that solve per-GPU-slot selection within a heterogeneous node</strong>
+        Three options exist today, from GA to DIY:
+
+        <br><br><strong style="font-size:12px">1 — Kubernetes DRA + NVIDIA DRA Driver (K8s ≥ 1.34, GA)</strong><br>
+        Dynamic Resource Allocation (KEP-3063) replaces count-based device plugin slots with a claim-based API. NVIDIA's DRA driver publishes a <code>ResourceSlice</code> per node listing every GPU with structured per-device attributes: product name, memory capacity, architecture, NVLink topology, UUID. A pod declares a <code>ResourceClaim</code> with a CEL selector that filters against those attributes — the scheduler resolves it against actual device inventory, so a claim requesting an A100 on a node that has both A10 and A100 slots gets the right card:
+      </div>
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">yaml — ResourceClaim (DRA)</span><button class="copy-btn" data-target="dra1">Copy</button></div>
+        <pre id="dra1"><span class="key">spec</span>:
+  <span class="key">devices</span>:
+    <span class="key">requests</span>:
+    - <span class="key">name</span>: <span class="str">gpu</span>
+      <span class="key">selectors</span>:
+      - <span class="key">cel</span>:
+          <span class="key">expression</span>: <span class="str">|
+            device.attributes["gpu.nvidia.com"].productName.startsWith("A100") &amp;&amp;
+            device.capacity["gpu.nvidia.com"].memory.isGreaterThan(quantity("40Gi"))</span></pre>
+      </div>
+      <div class="caveat caveat-ok" style="margin-top:0">
+        Requires GPU Operator with DRA mode enabled (opt-in; device plugin mode remains the default). This is the correct long-term answer — hardware-enforced, no shim needed.
+
+        <br><br><strong style="font-size:12px">2 — HAMi — CNCF Incubating (K8s ≥ 1.26, works today)</strong><br>
+        HAMi (<code>project-hami/hami</code>) intercepts CUDA calls via an injected <code>libvgpu.so</code> shim and exposes virtual GPU resources with per-pod VRAM limits — something the stock device plugin cannot do. It also supports GPU-type filtering within a heterogeneous node via pod annotations, and UUID-level targeting for exact-slot assignment. Covers NVIDIA, AMD, and Ascend under one scheduler. Isolation is software-enforced (CUDA interception), not hardware, so it sits between time-slicing and MIG on the guarantee spectrum. Production-ready on clusters that can't upgrade to 1.34 yet.
+
+        <br><br><strong style="font-size:12px">3 — Custom device plugin (any K8s version, DIY)</strong><br>
+        A patched device plugin can advertise <code>nvidia.com/gpu-a100</code> and <code>nvidia.com/gpu-a10</code> as separate resource types on the same node. Pods request the specific name. Works without DRA or HAMi, but requires maintaining a plugin fork and manual slot→name mapping via node-local discovery. No upstream project ships this out of the box.
+      </div>
+      <div class="table-wrap" style="margin-top:12px">
+        <table>
+          <thead><tr><th>Solution</th><th>K8s version</th><th>Isolation</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>DRA + NVIDIA DRA driver</td><td>≥ 1.34</td><td>Hardware</td><td>GA</td></tr>
+            <tr><td>HAMi</td><td>≥ 1.26</td><td>Software (CUDA shim)</td><td>CNCF Incubating</td></tr>
+            <tr><td>Custom device plugin</td><td>Any</td><td>Hardware</td><td>DIY / operator fork</td></tr>
+          </tbody>
+        </table>
+      </div>
+
       <h3 id="priority">Priority Classes + Preemption</h3>
       <p>High-priority inference pods preempt low-priority training jobs when GPU capacity is needed.</p>
       <div class="code-wrap">
