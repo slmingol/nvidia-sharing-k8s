@@ -1106,6 +1106,25 @@
         </table>
       </div>
 
+      <h4 style="margin:18px 0 8px;font-size:13px;color:var(--fg-muted)">DRA vs. HAMi — when to use which</h4>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th></th><th>DRA + NVIDIA driver</th><th>HAMi</th></tr></thead>
+          <tbody>
+            <tr><td><strong>What it is</strong></td><td>K8s core API (KEP-3063)</td><td>External project — CUDA shim + scheduler extender</td></tr>
+            <tr><td><strong>Mechanism</strong></td><td>Scheduler assigns specific GPU UUID via <code>ResourceClaim</code></td><td>Mutating webhook injects <code>libvgpu.so</code> into every container</td></tr>
+            <tr><td><strong>Per-slot GPU selection</strong></td><td>Yes — CEL on productName, memory, arch, UUID</td><td>Yes — type filter + UUID annotation</td></tr>
+            <tr><td><strong>Sub-GPU VRAM limits</strong></td><td>No — pod gets the whole assigned device</td><td>Yes — per-pod VRAM cap enforced at CUDA call level</td></tr>
+            <tr><td><strong>SM utilization limits</strong></td><td>No</td><td>Yes — per-pod SM % cap</td></tr>
+            <tr><td><strong>Isolation strength</strong></td><td>Hardware — device file binding, no bypass possible</td><td>Software — CUDA interception; bypassed if code avoids CUDA</td></tr>
+            <tr><td><strong>Multi-vendor</strong></td><td>NVIDIA only (separate DRA driver per vendor)</td><td>NVIDIA, AMD, Ascend, Cambricon, Hygon</td></tr>
+            <tr><td><strong>K8s version</strong></td><td>≥ 1.26 alpha → GA ~1.34</td><td>≥ 1.16 (essentially any)</td></tr>
+            <tr><td><strong>Overhead</strong></td><td>None</td><td>CUDA interception latency (small)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:10px;font-size:13px;line-height:1.7"><strong>Core split:</strong> DRA answers <em>which GPU slot does this pod get</em> — hardware binding, no sub-GPU VRAM enforcement beyond MIG. HAMi answers <em>how much of a GPU slot can this pod consume</em> — soft quotas, multiple pods per physical device. They solve adjacent problems and can run together (HAMi has experimental DRA integration). Practical today: HAMi if K8s &lt; 1.34, multi-vendor, or VRAM quotas needed. DRA if K8s ≥ 1.34 and clean K8s-native semantics matter more than sub-GPU splitting.</p>
+
       <h3 id="priority">Priority Classes + Preemption</h3>
       <p>High-priority inference pods preempt low-priority training jobs when GPU capacity is needed.</p>
       <div class="code-wrap">
