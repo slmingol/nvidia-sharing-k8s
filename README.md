@@ -1,4 +1,6 @@
-# nvidia-sharing-k8s
+<p align="center">
+  <img src="logo.svg" alt="NVIDIA GPU Sharing on Kubernetes" width="580">
+</p>
 
 Reference guide and implementation patterns for sharing NVIDIA GPUs efficiently on Kubernetes.
 
