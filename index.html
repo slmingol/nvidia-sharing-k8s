@@ -423,6 +423,12 @@
 
   a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+  /* ── references ── */
+  .ref-list { margin: 8px 0 16px 18px; display: flex; flex-direction: column; gap: 7px; }
+  .ref-list li { font-size: 13.5px; line-height: 1.6; }
+  .ref-list a { color: var(--accent); text-decoration: none; }
+  .ref-list a:hover { text-decoration: underline; }
+
   /* ── diagrams ── */
   .diag-section { display: flex; flex-direction: column; gap: 32px; }
   figure.diag { margin: 0; }
@@ -538,6 +544,7 @@
       </li>
       <li><a href="#helm">8 — Helm Install</a></li>
       <li><a href="#nextsteps">9 — Next Steps</a></li>
+      <li><a href="#references">References</a></li>
     </ul>
   </nav>
 
@@ -1577,6 +1584,47 @@ helm install gpu-operator nvidia/gpu-operator \
         </div>
 
       </div>
+    </section>
+
+    <!-- REFERENCES -->
+    <section class="section" id="references">
+      <h2><span class="sec-num" style="font-size:10px;letter-spacing:.05em">Ref</span> References</h2>
+
+      <h3>Primary source</h3>
+      <ul class="ref-list">
+        <li><a href="https://research.colfax-intl.com/sharing-nvidia-gpus-at-the-system-level-time-sliced-and-mig-backed-vgpus/" target="_blank">Sharing NVIDIA GPUs at the System Level: Time-Sliced and MIG-Backed vGPUs</a> — Colfax Research. Basis of this guide.</li>
+      </ul>
+
+      <h3>NVIDIA official documentation</h3>
+      <ul class="ref-list">
+        <li><a href="https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/index.html" target="_blank">NVIDIA GPU Operator</a> — GPU Operator overview, installation, MIG manager, MPS daemon configuration.</li>
+        <li><a href="https://docs.nvidia.com/datacenter/tesla/mig-user-guide/" target="_blank">NVIDIA MIG User Guide</a> — MIG architecture, profiles, partitioning, and instance management on A100/H100/A30.</li>
+        <li><a href="https://docs.nvidia.com/deploy/mps/index.html" target="_blank">NVIDIA Multi-Process Service (MPS)</a> — MPS architecture, client/server model, use cases.</li>
+        <li><a href="https://docs.nvidia.com/deploy/mps/latest/appendix-environment-variables.html" target="_blank">MPS environment variables</a> — <code>CUDA_MPS_PINNED_DEVICE_MEM_LIMIT</code> and related per-client VRAM cap configuration.</li>
+        <li><a href="https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/index.html" target="_blank">NVIDIA Triton Inference Server</a> — model repository, instance groups, dynamic batching, ensemble pipelines, backend support.</li>
+        <li><a href="https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/gpu-operator-kubevirt.html" target="_blank">GPU Operator + KubeVirt</a> — vGPU manager integration; VMs on K8s; DRA-mode mixed container/VM nodes.</li>
+      </ul>
+
+      <h3>Kubernetes GPU projects</h3>
+      <ul class="ref-list">
+        <li><a href="https://github.com/Project-HAMi/HAMi" target="_blank">HAMi — Heterogeneous AI Computing Virtualization Middleware</a> (CNCF Incubating) — CUDA shim, per-pod VRAM limits, GPU-type filtering, multi-vendor support.</li>
+        <li><a href="https://pkg.go.dev/github.com/NVIDIA/k8s-dra-driver-gpu/api/nvidia.com/resource/v1beta1" target="_blank">NVIDIA DRA Driver API reference</a> — <code>ResourceClaim</code> structured attributes; <code>MpsConfig.DefaultPinnedDeviceMemoryLimit</code>.</li>
+        <li><a href="https://github.com/NVIDIA/k8s-device-plugin/issues/764" target="_blank">k8s-device-plugin issue #764</a> — MPS pinned memory limits: <code>cudaMemGetInfo</code> still reports full card; tracking issue.</li>
+        <li><a href="https://intel.github.io/intel-device-plugins-for-kubernetes/cmd/gpu_plugin/README.html" target="_blank">Intel GPU Plugin for Kubernetes</a> — <code>shared-dev-num</code>, SR-IOV VF support, Intel dGPU scheduling.</li>
+        <li><a href="https://github.com/Project-HAMi/amd-hami-core/issues/6" target="_blank">HAMi AMD core — dmem cgroup evaluation</a> — tracking issue for using the Linux <code>dmem</code> cgroup as the AMD VRAM enforcement backend.</li>
+      </ul>
+
+      <h3>AMD</h3>
+      <ul class="ref-list">
+        <li><a href="https://rocm.blogs.amd.com/software-tools-optimization/compute-memory-modes/README.html" target="_blank">AMD ROCm — Compute and Memory Partition Modes</a> — SPX/CPX compute partitioning; NPS1/NPS4 memory partitioning on MI300X/MI325X.</li>
+        <li><a href="https://instinct.docs.amd.com/projects/gpu-operator/en/latest/dcm/applying-partition-profiles.html" target="_blank">AMD GPU Operator — Applying Partition Profiles</a> — Device Config Manager; NPS4 setup on OpenShift.</li>
+      </ul>
+
+      <h3>Kernel / hardware</h3>
+      <ul class="ref-list">
+        <li><a href="https://www.phoronix.com/news/DMEM-cgroup-vRAM-Control" target="_blank">dmem cgroup controller — VRAM control in Linux</a> — Phoronix coverage of the kernel-level GPU memory cgroup merged in Linux 6.14 for Intel xe.</li>
+        <li><a href="https://www.phoronix.com/news/Linux-6.15-rc2-DRM-Fixes" target="_blank">Linux 6.15 DRM fixes</a> — amdgpu dmem cgroup support timeline.</li>
+      </ul>
     </section>
   </main>
 </div>
