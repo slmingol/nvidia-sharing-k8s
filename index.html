@@ -824,6 +824,25 @@
               <strong>One node, same cluster</strong>
               The bare-metal node is just another OCP worker — same ArgoCD, same GPU Operator DaemonSet, same scheduling namespace. No separate cluster to manage. Taint it <code>nvidia.com/gpu=present:NoSchedule</code> so only GPU workloads land on it.
             </div>
+            <h4 style="margin:14px 0 6px;font-size:13px;color:var(--fg-muted)">Joining the bare-metal node to OCP</h4>
+            <div class="code-wrap">
+              <div class="code-bar"><span class="code-lang">bash — generate ignition config and boot the node</span><button class="copy-btn" data-target="tldr-nodeadd">Copy</button></div>
+              <pre id="tldr-nodeadd"><span class="cmt"># 1. Generate a worker ignition config from the cluster</span>
+oc extract -n openshift-machine-api \
+  secret/worker-user-data --to=- > worker.ign
+
+<span class="cmt"># 2. Serve worker.ign over HTTP from a reachable host, then boot the bare-metal</span>
+<span class="cmt">#    node with the RHCOS ISO. At the boot prompt:</span>
+<span class="cmt">#    coreos.inst.install_dev=/dev/sda</span>
+<span class="cmt">#    coreos.inst.ignition_url=http://&lt;bastion&gt;:8080/worker.ign</span>
+
+<span class="cmt"># 3. Approve the CSRs that appear once the node contacts the API server</span>
+oc get csr -o name | xargs oc adm certificate approve
+
+<span class="cmt"># 4. Confirm node joined and taint it</span>
+oc get nodes
+oc adm taint node &lt;gpu-node-name&gt; nvidia.com/gpu=present:NoSchedule</pre>
+            </div>
           </div>
           <span class="path-step-tag tag-hw">Infrastructure</span>
         </div>
@@ -970,6 +989,35 @@ oc adm policy add-scc-to-group nvidia-scc \
             <div class="caveat" style="margin-top:8px">
               <strong>Device plugin handles CUDA_VISIBLE_DEVICES</strong>
               You only need to set the <code>resources.limits</code> key. The device plugin injects <code>NVIDIA_VISIBLE_DEVICES</code> and <code>CUDA_VISIBLE_DEVICES</code> pointing at the specific MIG UUID automatically — Triton (and any CUDA process in the container) sees only that slice. Each pod is fully isolated at the hardware level.
+            </div>
+            <h4 style="margin:14px 0 6px;font-size:13px;color:var(--fg-muted)">Model repository layout</h4>
+            <p style="font-size:13px;color:var(--fg-muted);margin-bottom:8px">Each Triton pod mounts its own model repo volume. Minimal layout for your two workload types:</p>
+            <div class="code-wrap">
+              <div class="code-bar"><span class="code-lang">text — Triton model repository structure</span><button class="copy-btn" data-target="tldr-modelrepo">Copy</button></div>
+              <pre id="tldr-modelrepo"><span class="cmt"># Pod 1: 1g.10gb slice — audio transcoding</span>
+model-repo-audio/
+  whisper-large-v3/
+    config.pbtxt          <span class="cmt"># backend: "openai", model_type: whisper</span>
+    1/
+      model.py            <span class="cmt"># faster-whisper Python backend</span>
+
+<span class="cmt"># Pod 2: 2g.20gb slice — small LLM (7B-13B)</span>
+model-repo-llm-small/
+  llama3-8b/
+    config.pbtxt          <span class="cmt"># backend: "vllm"</span>
+    1/
+      model.json          <span class="cmt"># {"model": "meta-llama/Meta-Llama-3-8B-Instruct", "gpu_memory_utilization": 0.85}</span>
+
+<span class="cmt"># Pod 3: 3g.40gb slice — large LLM (30B-40B)</span>
+model-repo-llm-large/
+  mistral-22b/
+    config.pbtxt          <span class="cmt"># backend: "vllm"</span>
+    1/
+      model.json          <span class="cmt"># {"model": "mistralai/Mistral-Small-3.1-22B-Instruct-2503", "gpu_memory_utilization": 0.90}</span></pre>
+            </div>
+            <div class="caveat caveat-ok" style="margin-top:8px">
+              <strong>Custom models</strong>
+              Point <code>model.json</code> at a local path (<code>"model": "/models/my-fine-tuned"</code>) instead of a HuggingFace ID. Mount the weights via a PVC. No Triton config change needed — the vLLM backend handles the rest.
             </div>
           </div>
           <span class="path-step-tag tag-sw">Serving layer</span>
@@ -1941,11 +1989,11 @@ CUDA_MPS_PINNED_DEVICE_MEM_LIMIT="0=4096m" python inference.py</pre>
 
     <!-- HELM -->
     <section class="section" id="helm">
-      <h2><span class="sec-num">08</span> GPU Operator Helm Install</h2>
+      <h2><span class="sec-num">08</span> GPU Operator Install Reference</h2>
       <div class="helm-section">
-        <p>Baseline install with time-slicing config and mixed MIG strategy.</p>
+        <p>For OpenShift with ArgoCD, use the GitOps path in <a href="#tldr" style="color:var(--accent)">TL;DR step 1</a> — it handles CRI-O runtime, NFD separation, and version pinning. The raw Helm commands below are a reference for non-OCP clusters or one-off installs.</p>
         <div class="code-wrap">
-          <div class="code-bar"><span class="code-lang">bash</span><button class="copy-btn" data-target="helm1">Copy</button></div>
+          <div class="code-bar"><span class="code-lang">bash — generic Helm install (non-OCP)</span><button class="copy-btn" data-target="helm1">Copy</button></div>
           <pre id="helm1">helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
 helm repo update
 
@@ -1954,6 +2002,10 @@ helm install gpu-operator nvidia/gpu-operator \
   --create-namespace \
   --set mig.strategy=mixed \
   --set devicePlugin.config.name=time-slicing-config</pre>
+        </div>
+        <div class="caveat" style="margin-top:12px">
+          <strong>OCP differences</strong>
+          On OpenShift: set <code>operator.defaultRuntime=crio</code>, disable bundled NFD if already installed (<code>nfd.enabled=false</code>), and bind the <code>nvidia-scc</code> SCC to workload namespaces before deploying GPU pods. See <a href="#tldr" style="color:var(--accent-dim)">TL;DR steps 0–1</a> for the full OCP-specific flow.
         </div>
       </div>
     </section>

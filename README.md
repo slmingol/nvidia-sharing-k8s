@@ -6,7 +6,7 @@ Reference guide and implementation patterns for sharing NVIDIA GPUs efficiently 
 
 **Live site:** https://slmingol.github.io/nvidia-sharing-k8s/
 
-Covers time-slicing, MIG partitioning, MPS, scheduling optimizations, dynamic MIG reconfiguration, and a VM trade-off analysis.
+Covers GPU sharing mechanisms, scheduling, VRAM isolation, hybrid approaches, Triton vs. vLLM, and a tailored recommendation for OCP + Proxmox environments.
 
 ## Files
 
@@ -15,14 +15,26 @@ Covers time-slicing, MIG partitioning, MPS, scheduling optimizations, dynamic MI
 | `gpu-sharing-k8s.md` | Full reference in Markdown |
 | `index.html` | Rendered interactive reference — also served via GitHub Pages |
 
-## Approaches Covered
+## Sections
 
-- **Time-Slicing** — NVIDIA device plugin replicas; any GPU; no memory isolation
-- **MIG Partitioning** — hardware-level isolation on Ampere+ (A100, H100, A30); dedicated SMs and memory per slice
-- **MPS** — concurrent CUDA contexts; lower latency than time-slicing; no isolation
-- **Scheduling** — bin-packing via `MostAllocated`, GPU Feature Discovery node selectors, PriorityClass preemption
-- **Dynamic MIG Reconfiguration** — CronJob-driven profile shifts (e.g. training by day, inference by night)
-- **VM Trade-offs** — when VMs (KubeVirt) help vs. when bare-metal K8s is sufficient
+| # | Section |
+|---|---|
+| TL;DR | Recommended path for OCP + Proxmox + audio/LLM workloads (bare-metal node, ArgoCD GPU Operator, MIG, Triton) |
+| 00 | Hardware sharing mechanisms — Time-Slicing, MIG, MPS comparison |
+| — | Architecture diagrams — vLLM bare-metal, K8s+GPU Operator, MIG, VM+SR-IOV |
+| 01 | Time-Slicing — device plugin replicas, no VRAM isolation caveat |
+| 02 | MIG Partitioning — hardware isolation on Ampere+ (A100, H100, A30) |
+| 03 | MPS — concurrent CUDA contexts, shared fault domain |
+| 04 | Scheduling — bin-packing, GPU Feature Discovery, PriorityClass preemption |
+| 05 | Dynamic MIG Reconfiguration — CronJob-driven profile shifts |
+| — | Hybrid Approaches — vLLM+MIG, MIG+MPS |
+| — | VRAM Isolation Landscape — MIG, MPS pinned limits, AMD NPS4, dmem cgroup, HAMi |
+| — | Triton vs. vLLM — when to use each, Triton+MIG RAG pipeline |
+| 06 | Recommended Stack — decision guide by workload type |
+| 07 | VMs: Boon or Bust? — KubeVirt, SR-IOV, decision matrix |
+| 08 | GPU Operator install reference — Helm (generic) + OCP/ArgoCD notes |
+| 09 | Next Steps |
+| — | References — 14 cited sources |
 
 ## Quick Start
 
