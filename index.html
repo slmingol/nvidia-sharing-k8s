@@ -587,6 +587,68 @@
     th { background: #eee !important; }
   }
 
+  /* ── tldr ── */
+  .tldr-context {
+    background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    font-size: 13.5px;
+    line-height: 1.7;
+  }
+  .tldr-context strong { color: var(--accent); }
+  .tldr-context ul { margin: 8px 0 0 18px; display: flex; flex-direction: column; gap: 4px; }
+  .path-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 16px 0;
+    counter-reset: step;
+  }
+  .path-step {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .path-step:last-child { border-bottom: none; }
+  .path-step-num {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    border: 1.5px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+  }
+  .path-step-body { flex: 1; min-width: 0; }
+  .path-step-title { font-size: 14px; font-weight: 600; color: var(--fg); margin-bottom: 3px; }
+  .path-step-desc { font-size: 13px; color: var(--fg-muted); line-height: 1.6; }
+  .path-step-desc code { font-size: 12px; }
+  .path-step-tag {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    border-radius: 4px;
+    padding: 3px 7px;
+    margin-top: 3px;
+    align-self: flex-start;
+  }
+  .tag-ocp  { background: color-mix(in srgb, #e05252 12%, transparent); color: #e05252; border: 1px solid color-mix(in srgb, #e05252 30%, transparent); }
+  .tag-hw   { background: color-mix(in srgb, #76b900 12%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, #76b900 30%, transparent); }
+  .tag-sw   { background: color-mix(in srgb, #6888ff 12%, transparent); color: #6888ff; border: 1px solid color-mix(in srgb, #6888ff 30%, transparent); }
+  .tag-vm   { background: color-mix(in srgb, #f0a500 12%, transparent); color: #c47e00; border: 1px solid color-mix(in srgb, #f0a500 30%, transparent); }
+
   /* ── next steps ── */
   .next-steps-list { display: flex; flex-direction: column; gap: 2px; }
   .next-step {
@@ -681,6 +743,7 @@
   <nav class="sidebar" id="sidebar" aria-label="Table of contents">
     <div class="toc-label">Contents</div>
     <ul class="toc-list" id="tocList">
+      <li><a href="#tldr"><strong>TL;DR — Your Path</strong></a></li>
       <li><a href="#mechanisms">Sharing Mechanisms</a></li>
       <li><a href="#diagrams">Approach Diagrams</a></li>
       <li><a href="#timeslicing">1 — Time-Slicing</a></li>
@@ -721,11 +784,97 @@
       <div class="page-meta">
         <span>Reference guide</span>
         <span>·</span>
-        <span>Updated <time id="lastUpdated">2026-10-06</time></span>
+        <span>Updated <time id="lastUpdated">2026-10-07</time></span>
         <span>·</span>
         <a href="https://research.colfax-intl.com/sharing-nvidia-gpus-at-the-system-level-time-sliced-and-mig-backed-vgpus/" target="_blank" rel="noopener">Source article ↗</a>
       </div>
     </div>
+
+    <!-- TLDR -->
+    <section class="section" id="tldr">
+      <h2><span class="sec-num" style="font-size:10px;letter-spacing:.05em">TL;DR</span> Recommended Path for Your Environment</h2>
+
+      <div class="tldr-context">
+        <strong>Your constraints:</strong>
+        <ul>
+          <li>One AI server per DC — scarce, must maximize utilization</li>
+          <li>Proxmox + OpenShift clusters already running in those DCs</li>
+          <li>Workloads: live audio transcoding, LLM inference (stock + custom models)</li>
+        </ul>
+      </div>
+
+      <div class="path-steps">
+
+        <div class="path-step">
+          <div class="path-step-num">1</div>
+          <div class="path-step-body">
+            <div class="path-step-title">Install NVIDIA GPU Operator on OpenShift</div>
+            <div class="path-step-desc">GPU Operator is available in OperatorHub — one-click install. Deploys the device plugin, MIG Manager, MPS daemon, DCGM Exporter, and NFD all as DaemonSets. Leverages your existing OCP cluster rather than standing up anything new. Proxmox VMs running on the same host can still get GPU access via SR-IOV passthrough if needed, but OCP pods are the primary target.</div>
+          </div>
+          <span class="path-step-tag tag-ocp">OCP / OperatorHub</span>
+        </div>
+
+        <div class="path-step">
+          <div class="path-step-num">2</div>
+          <div class="path-step-body">
+            <div class="path-step-title">Enable MIG with <code>mixed</code> strategy on the A100</div>
+            <div class="path-step-desc">MIG is the only way to get hard VRAM and SM isolation on one physical GPU with multiple concurrent workloads. <code>mixed</code> strategy lets each node advertise different slice sizes simultaneously. Start with this profile for your workload mix on an 80 GB A100:</div>
+          </div>
+          <span class="path-step-tag tag-hw">Hardware isolation</span>
+        </div>
+
+      </div>
+
+      <div class="table-wrap" style="margin-top:0">
+        <table>
+          <thead><tr><th>MIG profile</th><th>Count</th><th>VRAM</th><th>Workload</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td><code>1g.10gb</code></td><td>2</td><td>10 GB each</td><td>Live audio transcoding (Whisper / Riva)</td><td>Whisper large-v3 fits in 1.5 GB; the slice handles many concurrent short requests. Two slices = redundancy.</td></tr>
+            <tr><td><code>2g.20gb</code></td><td>1</td><td>20 GB</td><td>Small/mid LLM inference (7B–13B models)</td><td>Llama-3 8B fp16 ≈ 16 GB. Comfortable headroom for KV cache.</td></tr>
+            <tr><td><code>3g.40gb</code></td><td>1</td><td>40 GB</td><td>Larger LLM inference (30B–40B) or fine-tune eval</td><td>Mistral 22B, CodeLlama 34B fit here. Also useful for batch embedding jobs.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="caveat" style="margin-top:8px">
+        <strong>70B+ models</strong>
+        A 70B model (fp16 ≈ 140 GB) does not fit any single A100-80GB MIG slice. Options: quantize to 4-bit (≈35 GB → fits in <code>3g.40gb</code>), use the full GPU without MIG (reconfigure the node dynamically), or run across two GPUs with tensor parallelism. With one GPU per DC, quantization is the practical path.
+      </div>
+
+      <div class="path-steps" style="margin-top:20px">
+
+        <div class="path-step">
+          <div class="path-step-num">3</div>
+          <div class="path-step-body">
+            <div class="path-step-title">Run Triton Inference Server as the serving layer</div>
+            <div class="path-step-desc">Triton sits on top of MIG and handles multi-model serving, dynamic batching, and the audio pipeline in one place. Deploy one Triton pod per MIG slice, each with its own model repository. For audio: use the <code>whisper</code> or Riva ASR backend. For LLMs: use the <code>vllm</code> backend (continuous batching + PagedAttention without managing a separate vLLM process). Clients use gRPC or HTTP — no GPU knowledge required at the application layer.</div>
+          </div>
+          <span class="path-step-tag tag-sw">Serving layer</span>
+        </div>
+
+        <div class="path-step">
+          <div class="path-step-num">4</div>
+          <div class="path-step-body">
+            <div class="path-step-title">Use Proxmox for isolation-heavy or non-OCP workloads</div>
+            <div class="path-step-desc">Proxmox with SR-IOV passthrough is the right path when a workload needs a full GPU in a VM (e.g., a Windows transcoding app, a vendor appliance, or a team that can't use containers). MIG and SR-IOV are mutually exclusive on the same GPU — you can't do both simultaneously. If you need both VM and pod workloads on one GPU, use KubeVirt on OCP with the NVIDIA vGPU manager instead; Proxmox is better suited for workloads that are fully VM-native and don't need K8s scheduling.</div>
+          </div>
+          <span class="path-step-tag tag-vm">Proxmox / VMs</span>
+        </div>
+
+        <div class="path-step">
+          <div class="path-step-num">5</div>
+          <div class="path-step-body">
+            <div class="path-step-title">Monitor and right-size with DCGM Exporter + Prometheus</div>
+            <div class="path-step-desc">GPU Operator deploys DCGM Exporter automatically. Wire it to your existing Prometheus/Grafana stack. Watch <code>DCGM_FI_DEV_MEM_USED</code> and <code>DCGM_FI_PROF_GR_ENGINE_ACTIVE</code> per MIG slice. With one GPU per DC, any saturation directly impacts all workloads — alerting on &gt;80% SM utilization per slice is essential before adding more tenants.</div>
+          </div>
+          <span class="path-step-tag tag-sw">Observability</span>
+        </div>
+
+      </div>
+
+      <div class="decision-note" style="margin-top:4px">
+        <strong>Bottom line:</strong> OCP + GPU Operator + MIG (mixed) + Triton is the path that uses your existing infrastructure, gives hard per-workload VRAM isolation, handles both the audio and LLM cases, and scales to custom models without architecture changes. Proxmox stays as the VM layer for workloads that genuinely need it.
+      </div>
+    </section>
 
     <!-- MECHANISMS -->
     <section class="section" id="mechanisms">
