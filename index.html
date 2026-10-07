@@ -843,6 +843,20 @@
       - <span class="val">CreateNamespace=true</span></pre>
             </div>
           </div>
+            <div class="caveat caveat-danger" style="margin-top:12px">
+              <strong>OCP Security Context Constraints</strong>
+              GPU Operator creates an <code>nvidia-scc</code> SCC, but pods won't use it unless their ServiceAccount is explicitly bound to it. Without this, GPU workloads fail with <code>EPERM</code> on device access. Bind before deploying any GPU pod:
+              <div class="code-wrap" style="margin-top:8px">
+                <div class="code-bar"><span class="code-lang">bash — bind SCC to workload namespace</span><button class="copy-btn" data-target="tldr-scc">Copy</button></div>
+                <pre id="tldr-scc">oc adm policy add-scc-to-user nvidia-scc \
+  -z default -n &lt;your-workload-namespace&gt;
+
+<span class="cmt"># or via ClusterRoleBinding for all service accounts in a namespace:</span>
+oc adm policy add-scc-to-group nvidia-scc \
+  system:serviceaccounts:&lt;your-workload-namespace&gt;</pre>
+              </div>
+            </div>
+          </div>
           <span class="path-step-tag tag-ocp">Helm + ArgoCD</span>
         </div>
 
@@ -851,6 +865,33 @@
           <div class="path-step-body">
             <div class="path-step-title">Enable MIG with <code>mixed</code> strategy on the A100</div>
             <div class="path-step-desc">MIG is the only way to get hard VRAM and SM isolation on one physical GPU with multiple concurrent workloads. <code>mixed</code> strategy lets each node advertise different slice sizes simultaneously. Start with this profile for your workload mix on an 80 GB A100:</div>
+            <div class="code-wrap" style="margin-top:12px">
+              <div class="code-bar"><span class="code-lang">yaml — MigConfig ConfigMap (node label selects profile)</span><button class="copy-btn" data-target="tldr-migconfig">Copy</button></div>
+              <pre id="tldr-migconfig"><span class="key">apiVersion</span>: <span class="val">v1</span>
+<span class="key">kind</span>: <span class="val">ConfigMap</span>
+<span class="key">metadata</span>:
+  <span class="key">name</span>: <span class="val">default-mig-parted-config</span>
+  <span class="key">namespace</span>: <span class="val">gpu-operator</span>
+<span class="key">data</span>:
+  <span class="key">config.yaml</span>: |
+    <span class="key">version</span>: <span class="val">v1</span>
+    <span class="key">mig-configs</span>:
+      <span class="cmt"># profile name referenced by node label below</span>
+      <span class="key">audio-and-llm</span>:
+        - <span class="key">devices</span>: <span class="val">all</span>
+          <span class="key">mig-enabled</span>: <span class="val">true</span>
+          <span class="key">mig-devices</span>:
+            <span class="str">"1g.10gb"</span>: <span class="num">2</span>   <span class="cmt"># Whisper / live audio</span>
+            <span class="str">"2g.20gb"</span>: <span class="num">1</span>   <span class="cmt"># 7B-13B LLM</span>
+            <span class="str">"3g.40gb"</span>: <span class="num">1</span>   <span class="cmt"># 30B-40B LLM</span>
+<span class="cmt">---</span>
+<span class="cmt"># Label the GPU node to activate the profile:</span>
+<span class="cmt"># kubectl label node &lt;gpu-node&gt; nvidia.com/mig.config=audio-and-llm</span></pre>
+            </div>
+            <div class="caveat caveat-ok" style="margin-top:8px">
+              <strong>MIG Manager applies the config automatically</strong>
+              Once the node is labeled, GPU Operator's MIG Manager DaemonSet reads the ConfigMap, drains GPU workloads on that node, repartitions the device, and restarts. No manual <code>nvidia-smi</code> required. The node will advertise <code>nvidia.com/mig-1g.10gb</code>, <code>nvidia.com/mig-2g.20gb</code>, and <code>nvidia.com/mig-3g.40gb</code> resources to the scheduler.
+            </div>
           </div>
           <span class="path-step-tag tag-hw">Hardware isolation</span>
         </div>
@@ -879,6 +920,35 @@
           <div class="path-step-body">
             <div class="path-step-title">Run Triton Inference Server as the serving layer</div>
             <div class="path-step-desc">Triton sits on top of MIG and handles multi-model serving, dynamic batching, and the audio pipeline in one place. Deploy one Triton pod per MIG slice, each with its own model repository. For audio: use the <code>whisper</code> or Riva ASR backend. For LLMs: use the <code>vllm</code> backend (continuous batching + PagedAttention without managing a separate vLLM process). Clients use gRPC or HTTP — no GPU knowledge required at the application layer.</div>
+            <div class="code-wrap" style="margin-top:12px">
+              <div class="code-bar"><span class="code-lang">yaml — Triton pods targeting specific MIG slices</span><button class="copy-btn" data-target="tldr-triton-mig">Copy</button></div>
+              <pre id="tldr-triton-mig"><span class="cmt"># Pod targeting 1g.10gb slice (Whisper / audio)</span>
+<span class="key">resources</span>:
+  <span class="key">limits</span>:
+    <span class="key">nvidia.com/mig-1g.10gb</span>: <span class="val">"1"</span>
+<span class="cmt">---</span>
+<span class="cmt"># Pod targeting 2g.20gb slice (7B-13B LLM)</span>
+<span class="key">resources</span>:
+  <span class="key">limits</span>:
+    <span class="key">nvidia.com/mig-2g.20gb</span>: <span class="val">"1"</span>
+<span class="cmt">---</span>
+<span class="cmt"># Pod targeting 3g.40gb slice (30B-40B LLM)</span>
+<span class="key">resources</span>:
+  <span class="key">limits</span>:
+    <span class="key">nvidia.com/mig-3g.40gb</span>: <span class="val">"1"</span>
+<span class="cmt">---</span>
+<span class="cmt"># Triton env vars to pin to its assigned MIG slice</span>
+<span class="key">env</span>:
+  - <span class="key">name</span>: <span class="val">NVIDIA_VISIBLE_DEVICES</span>
+    <span class="val">valueFrom</span>:
+      <span class="val">fieldRef</span>: { <span class="key">fieldPath</span>: <span class="val">status.containerStatuses[0].allocatedResources['nvidia.com/mig-1g.10gb']</span> }
+  - <span class="key">name</span>: <span class="val">CUDA_VISIBLE_DEVICES</span>
+    <span class="val">value</span>: <span class="val">"MIG-GPU-..."</span>  <span class="cmt"># injected automatically by device plugin</span></pre>
+            </div>
+            <div class="caveat" style="margin-top:8px">
+              <strong>Device plugin handles CUDA_VISIBLE_DEVICES</strong>
+              You only need to set the <code>resources.limits</code> key. The device plugin injects <code>NVIDIA_VISIBLE_DEVICES</code> and <code>CUDA_VISIBLE_DEVICES</code> pointing at the specific MIG UUID automatically — Triton (and any CUDA process in the container) sees only that slice. Each pod is fully isolated at the hardware level.
+            </div>
           </div>
           <span class="path-step-tag tag-sw">Serving layer</span>
         </div>
