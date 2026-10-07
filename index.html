@@ -842,7 +842,6 @@
     <span class="key">syncOptions</span>:
       - <span class="val">CreateNamespace=true</span></pre>
             </div>
-          </div>
             <div class="caveat caveat-danger" style="margin-top:12px">
               <strong>OCP Security Context Constraints</strong>
               GPU Operator creates an <code>nvidia-scc</code> SCC, but pods won't use it unless their ServiceAccount is explicitly bound to it. Without this, GPU workloads fail with <code>EPERM</code> on device access. Bind before deploying any GPU pod:
