@@ -808,10 +808,42 @@
         <div class="path-step">
           <div class="path-step-num">1</div>
           <div class="path-step-body">
-            <div class="path-step-title">Install NVIDIA GPU Operator on OpenShift</div>
-            <div class="path-step-desc">GPU Operator is available in OperatorHub — one-click install. Deploys the device plugin, MIG Manager, MPS daemon, DCGM Exporter, and NFD all as DaemonSets. Leverages your existing OCP cluster rather than standing up anything new. Proxmox VMs running on the same host can still get GPU access via SR-IOV passthrough if needed, but OCP pods are the primary target.</div>
+            <div class="path-step-title">Install NVIDIA GPU Operator on OpenShift via Helm + ArgoCD</div>
+            <div class="path-step-desc">Avoid OperatorHub — manage GPU Operator as a Helm chart declared in ArgoCD. Add the NVIDIA Helm repo (<code>helm.ngc.nvidia.com/nvidia</code>), create an ArgoCD <code>Application</code> targeting the <code>gpu-operator</code> chart, and apply it to your OCP cluster. This keeps GPU infrastructure in GitOps alongside your other workloads, gives you version-pinned upgrades, and avoids OLM lifecycle complexity. NFD (Node Feature Discovery) should be a separate ArgoCD app — GPU Operator's bundled NFD can conflict with an existing cluster-wide NFD install.</div>
+            <div class="code-wrap" style="margin-top:12px">
+              <div class="code-bar"><span class="code-lang">yaml — ArgoCD Application</span><button class="copy-btn" data-target="tldr-argocd">Copy</button></div>
+              <pre id="tldr-argocd"><span class="key">apiVersion</span>: <span class="val">argoproj.io/v1alpha1</span>
+<span class="key">kind</span>: <span class="val">Application</span>
+<span class="key">metadata</span>:
+  <span class="key">name</span>: <span class="val">gpu-operator</span>
+  <span class="key">namespace</span>: <span class="val">argocd</span>
+<span class="key">spec</span>:
+  <span class="key">project</span>: <span class="val">default</span>
+  <span class="key">source</span>:
+    <span class="key">repoURL</span>: <span class="val">https://helm.ngc.nvidia.com/nvidia</span>
+    <span class="key">chart</span>: <span class="val">gpu-operator</span>
+    <span class="key">targetRevision</span>: <span class="val">v24.9.2</span>   <span class="cmt"># pin to a specific release</span>
+    <span class="key">helm</span>:
+      <span class="key">releaseName</span>: <span class="val">gpu-operator</span>
+      <span class="key">values</span>: |
+        <span class="key">mig</span>:
+          <span class="key">strategy</span>: <span class="val">mixed</span>
+        <span class="key">nfd</span>:
+          <span class="key">enabled</span>: <span class="val">false</span>   <span class="cmt"># disable if NFD already installed cluster-wide</span>
+        <span class="key">operator</span>:
+          <span class="key">defaultRuntime</span>: <span class="val">crio</span>  <span class="cmt"># OCP uses CRI-O</span>
+  <span class="key">destination</span>:
+    <span class="key">server</span>: <span class="val">https://kubernetes.default.svc</span>
+    <span class="key">namespace</span>: <span class="val">gpu-operator</span>
+  <span class="key">syncPolicy</span>:
+    <span class="key">automated</span>:
+      <span class="key">prune</span>: <span class="val">true</span>
+      <span class="key">selfHeal</span>: <span class="val">true</span>
+    <span class="key">syncOptions</span>:
+      - <span class="val">CreateNamespace=true</span></pre>
+            </div>
           </div>
-          <span class="path-step-tag tag-ocp">OCP / OperatorHub</span>
+          <span class="path-step-tag tag-ocp">Helm + ArgoCD</span>
         </div>
 
         <div class="path-step">
