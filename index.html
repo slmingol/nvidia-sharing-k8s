@@ -1046,6 +1046,140 @@ model-repo-llm-large/
       <div class="decision-note" style="margin-top:4px">
         <strong>Bottom line:</strong> OCP + GPU Operator + MIG (mixed) + Triton is the path that uses your existing infrastructure, gives hard per-workload VRAM isolation, handles both the audio and LLM cases, and scales to custom models without architecture changes. Proxmox stays as the VM layer for workloads that genuinely need it.
       </div>
+
+      <h3 style="margin-top:28px">Stack architecture</h3>
+      <figure class="diag" style="margin-top:12px">
+        <svg viewBox="0 0 760 370" role="img" aria-label="TL;DR stack architecture: OCP cluster with ArgoCD deploying GPU Operator to a bare-metal A100 node, MIG partitions mapped to Triton pods serving audio and LLM workloads">
+          <defs>
+            <marker id="tl-arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <polygon points="0 0,7 3.5,0 7" fill="currentColor" opacity="0.6"/>
+            </marker>
+            <marker id="tl-arr-g" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <polygon points="0 0,7 3.5,0 7" fill="#76b900"/>
+            </marker>
+          </defs>
+
+          <!-- OCP cluster border -->
+          <rect x="2" y="2" width="756" height="366" rx="10" class="diag-box-host"/>
+          <text x="14" y="18" class="diag-label-sm" opacity="0.5">OCP Cluster</text>
+
+          <!-- ArgoCD box -->
+          <rect x="12" y="28" width="108" height="34" rx="5" class="diag-box"/>
+          <text x="66" y="48" class="diag-label-sm" text-anchor="middle">ArgoCD</text>
+          <!-- GPU Operator box -->
+          <rect x="12" y="80" width="108" height="34" rx="5" class="diag-box-op"/>
+          <text x="66" y="95" class="diag-label-sm" text-anchor="middle" font-size="10">GPU</text>
+          <text x="66" y="107" class="diag-label-sm" text-anchor="middle" font-size="10">Operator</text>
+          <!-- ArgoCD→GPU Operator arrow -->
+          <line x1="66" y1="62" x2="66" y2="78" class="diag-line-g" marker-end="url(#tl-arr-g)"/>
+          <text x="69" y="74" class="diag-text-sm" opacity="0.55" font-size="9">deploys</text>
+
+          <!-- GPU Operator → bare-metal node manage arrow -->
+          <line x1="120" y1="97" x2="144" y2="97" class="diag-line-g" stroke-dasharray="4 2" marker-end="url(#tl-arr-g)"/>
+          <text x="122" y="92" class="diag-text-sm" opacity="0.55" font-size="9">manages</text>
+
+          <!-- Bare-metal node border -->
+          <rect x="140" y="12" width="612" height="350" rx="8" class="diag-box-node"/>
+          <text x="154" y="27" class="diag-label-sm" opacity="0.5" font-size="10">Bare-metal GPU Worker (OCP worker node)</text>
+
+          <!-- A100 GPU box -->
+          <rect x="152" y="34" width="588" height="90" rx="6" class="diag-box-gpu"/>
+          <text x="446" y="50" class="diag-label" text-anchor="middle" font-size="11" fill="#76b900">NVIDIA A100-80GB</text>
+
+          <!-- MIG slice boxes inside GPU -->
+          <!-- 1g.10gb #1 -->
+          <rect x="162" y="56" width="120" height="60" rx="4" class="diag-box-mig"/>
+          <text x="222" y="74" class="diag-text" text-anchor="middle" font-size="10" fill="#76b900">1g.10gb</text>
+          <text x="222" y="87" class="diag-text-sm" text-anchor="middle" opacity="0.7">10 GB VRAM</text>
+          <text x="222" y="99" class="diag-text-sm" text-anchor="middle" opacity="0.5">audio #1</text>
+
+          <!-- 1g.10gb #2 -->
+          <rect x="290" y="56" width="120" height="60" rx="4" class="diag-box-mig"/>
+          <text x="350" y="74" class="diag-text" text-anchor="middle" font-size="10" fill="#76b900">1g.10gb</text>
+          <text x="350" y="87" class="diag-text-sm" text-anchor="middle" opacity="0.7">10 GB VRAM</text>
+          <text x="350" y="99" class="diag-text-sm" text-anchor="middle" opacity="0.5">audio #2</text>
+
+          <!-- 2g.20gb -->
+          <rect x="418" y="56" width="152" height="60" rx="4" class="diag-box-mig"/>
+          <text x="494" y="74" class="diag-text" text-anchor="middle" font-size="10" fill="#76b900">2g.20gb</text>
+          <text x="494" y="87" class="diag-text-sm" text-anchor="middle" opacity="0.7">20 GB VRAM</text>
+          <text x="494" y="99" class="diag-text-sm" text-anchor="middle" opacity="0.5">llm-small</text>
+
+          <!-- 3g.40gb -->
+          <rect x="578" y="56" width="154" height="60" rx="4" class="diag-box-mig"/>
+          <text x="655" y="74" class="diag-text" text-anchor="middle" font-size="10" fill="#76b900">3g.40gb</text>
+          <text x="655" y="87" class="diag-text-sm" text-anchor="middle" opacity="0.7">40 GB VRAM</text>
+          <text x="655" y="99" class="diag-text-sm" text-anchor="middle" opacity="0.5">llm-large</text>
+
+          <!-- MIG → Triton arrows -->
+          <line x1="222" y1="116" x2="222" y2="148" class="diag-line-g" marker-end="url(#tl-arr-g)"/>
+          <line x1="350" y1="116" x2="350" y2="148" class="diag-line-g" marker-end="url(#tl-arr-g)"/>
+          <line x1="494" y1="116" x2="494" y2="148" class="diag-line-g" marker-end="url(#tl-arr-g)"/>
+          <line x1="655" y1="116" x2="655" y2="148" class="diag-line-g" marker-end="url(#tl-arr-g)"/>
+          <text x="270" y="136" class="diag-text-sm" text-anchor="middle" opacity="0.45" font-size="9">device plugin assigns MIG UUID</text>
+
+          <!-- Triton pod boxes -->
+          <rect x="162" y="150" width="120" height="58" rx="5" class="diag-box-pod"/>
+          <text x="222" y="168" class="diag-text" text-anchor="middle" font-size="10">Triton</text>
+          <text x="222" y="181" class="diag-text-sm" text-anchor="middle" opacity="0.7">whisper backend</text>
+          <text x="222" y="193" class="diag-text-sm" text-anchor="middle" opacity="0.55" font-size="9">gRPC :8001</text>
+
+          <rect x="290" y="150" width="120" height="58" rx="5" class="diag-box-pod"/>
+          <text x="350" y="168" class="diag-text" text-anchor="middle" font-size="10">Triton</text>
+          <text x="350" y="181" class="diag-text-sm" text-anchor="middle" opacity="0.7">whisper backend</text>
+          <text x="350" y="193" class="diag-text-sm" text-anchor="middle" opacity="0.55" font-size="9">gRPC :8001</text>
+
+          <rect x="418" y="150" width="152" height="58" rx="5" class="diag-box-pod"/>
+          <text x="494" y="168" class="diag-text" text-anchor="middle" font-size="10">Triton</text>
+          <text x="494" y="181" class="diag-text-sm" text-anchor="middle" opacity="0.7">vLLM backend</text>
+          <text x="494" y="193" class="diag-text-sm" text-anchor="middle" opacity="0.55" font-size="9">gRPC :8001</text>
+
+          <rect x="578" y="150" width="154" height="58" rx="5" class="diag-box-pod"/>
+          <text x="655" y="168" class="diag-text" text-anchor="middle" font-size="10">Triton</text>
+          <text x="655" y="181" class="diag-text-sm" text-anchor="middle" opacity="0.7">vLLM backend</text>
+          <text x="655" y="193" class="diag-text-sm" text-anchor="middle" opacity="0.55" font-size="9">gRPC :8001</text>
+
+          <!-- Triton → Workload labels -->
+          <line x1="222" y1="208" x2="222" y2="232" class="diag-line" opacity="0.35" marker-end="url(#tl-arr)"/>
+          <line x1="350" y1="208" x2="350" y2="232" class="diag-line" opacity="0.35" marker-end="url(#tl-arr)"/>
+          <line x1="494" y1="208" x2="494" y2="232" class="diag-line" opacity="0.35" marker-end="url(#tl-arr)"/>
+          <line x1="655" y1="208" x2="655" y2="232" class="diag-line" opacity="0.35" marker-end="url(#tl-arr)"/>
+
+          <!-- Workload boxes -->
+          <rect x="162" y="232" width="120" height="42" rx="4" class="diag-box" opacity="0.6"/>
+          <text x="222" y="249" class="diag-text-sm" text-anchor="middle">Whisper large-v3</text>
+          <text x="222" y="263" class="diag-text-sm" text-anchor="middle" opacity="0.55" font-size="9">live audio → text</text>
+
+          <rect x="290" y="232" width="120" height="42" rx="4" class="diag-box" opacity="0.6"/>
+          <text x="350" y="249" class="diag-text-sm" text-anchor="middle">Whisper large-v3</text>
+          <text x="350" y="263" class="diag-text-sm" text-anchor="middle" opacity="0.55" font-size="9">live audio → text</text>
+
+          <rect x="418" y="232" width="152" height="42" rx="4" class="diag-box" opacity="0.6"/>
+          <text x="494" y="249" class="diag-text-sm" text-anchor="middle">Llama-3 8B / 13B</text>
+          <text x="494" y="263" class="diag-text-sm" text-anchor="middle" opacity="0.55" font-size="9">small LLM inference</text>
+
+          <rect x="578" y="232" width="154" height="42" rx="4" class="diag-box" opacity="0.6"/>
+          <text x="655" y="249" class="diag-text-sm" text-anchor="middle">Mistral 22B / custom</text>
+          <text x="655" y="263" class="diag-text-sm" text-anchor="middle" opacity="0.55" font-size="9">large LLM inference</text>
+
+          <!-- Client requests from bottom -->
+          <text x="446" y="298" class="diag-text-sm" text-anchor="middle" opacity="0.45" font-size="10">clients — gRPC / HTTP (Triton API)</text>
+          <line x1="222" y1="304" x2="222" y2="290" class="diag-line" opacity="0.25" stroke-dasharray="3 2" marker-end="url(#tl-arr)"/>
+          <line x1="350" y1="304" x2="350" y2="290" class="diag-line" opacity="0.25" stroke-dasharray="3 2" marker-end="url(#tl-arr)"/>
+          <line x1="494" y1="304" x2="494" y2="290" class="diag-line" opacity="0.25" stroke-dasharray="3 2" marker-end="url(#tl-arr)"/>
+          <line x1="655" y1="304" x2="655" y2="290" class="diag-line" opacity="0.25" stroke-dasharray="3 2" marker-end="url(#tl-arr)"/>
+          <line x1="162" y1="304" x2="732" y2="304" class="diag-line" opacity="0.2"/>
+
+          <!-- Legend -->
+          <rect x="152" y="325" width="12" height="10" rx="2" class="diag-box-mig"/>
+          <text x="168" y="334" class="diag-text-sm" font-size="9" opacity="0.6">MIG slice (hardware isolated)</text>
+          <rect x="310" y="325" width="12" height="10" rx="2" class="diag-box-pod"/>
+          <text x="326" y="334" class="diag-text-sm" font-size="9" opacity="0.6">Triton pod (OCP)</text>
+          <rect x="450" y="325" width="12" height="10" rx="2" class="diag-box-op"/>
+          <text x="466" y="334" class="diag-text-sm" font-size="9" opacity="0.6">GPU Operator component</text>
+        </svg>
+        <figcaption><strong>TL;DR architecture:</strong> ArgoCD deploys GPU Operator to the bare-metal OCP worker. GPU Operator's MIG Manager partitions the A100-80GB into 4 slices. Each slice is claimed by exactly one Triton pod via a typed resource request (<code>nvidia.com/mig-Xg.Ygb</code>); the device plugin injects the MIG UUID. Clients call the Triton gRPC/HTTP API — no GPU knowledge required at the application layer.</figcaption>
+      </figure>
     </section>
 
     <!-- MECHANISMS -->
