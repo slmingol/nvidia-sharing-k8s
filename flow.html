@@ -449,21 +449,22 @@ a.el:hover{text-decoration:underline}
 <circle id="alert-dot" cx="1170" cy="556" r="6" fill="#e05252" opacity="0"/>
 <text id="alert-txt" x="1170" y="548" font-family="IBM Plex Mono" font-size="7" fill="#e05252" text-anchor="middle" opacity="0">ALERT</text>
 
-<!-- ══ MOTION PATHS (invisible) — all route through OCP Service hub ══ -->
-<!-- audio paths: fan up from OCP svc to whisper pods -->
-<path id="mp-a1" d="M155,208 Q210,235 270,255 Q400,230 568,205 L738,208" fill="none" stroke="none"/>
-<path id="mp-a2" d="M155,236 Q210,248 270,258 Q400,255 568,258 L738,245" fill="none" stroke="none"/>
-<path id="mp-a3" d="M155,264 Q210,262 270,260 Q400,230 568,205 L738,208" fill="none" stroke="none"/>
-<!-- llm-sm paths: route through OCP svc then down to 2g.20gb pod -->
-<path id="mp-s1" d="M155,292 Q210,275 270,262 Q400,295 568,314 L738,302" fill="none" stroke="none"/>
-<path id="mp-s2" d="M155,320 Q210,295 270,265 Q400,295 568,314 L738,302" fill="none" stroke="none"/>
-<!-- llm-lg paths: route through OCP svc then down to 3g.40gb pod -->
-<path id="mp-l1" d="M155,348 Q210,315 270,268 Q400,340 568,380 L738,368" fill="none" stroke="none"/>
-<path id="mp-l2" d="M155,376 Q210,335 270,270 Q400,345 568,380 L738,368" fill="none" stroke="none"/>
-<!-- batch paths: all via OCP svc (no Turnstone shortcut) -->
-<path id="mp-b1" d="M155,404 Q210,360 270,272 Q400,345 568,380 L738,368" fill="none" stroke="none"/>
-<path id="mp-b2" d="M155,432 Q210,375 270,273 Q400,300 568,314 L738,302" fill="none" stroke="none"/>
-<path id="mp-b3" d="M155,460 Q210,390 270,275 Q400,345 568,380 L738,368" fill="none" stroke="none"/>
+<!-- ══ MOTION PATHS (invisible) — follow exact arrow geometry ══ -->
+<!-- Each path: client dot → OCP left edge (270,260) → OCP right exit → exact arrow curve → Triton right edge → MIG entry -->
+<!-- audio → pod1 (ar-s1: M450,252 Q530,210 568,205; ar-t1-m: M688,205 L738,208) -->
+<path id="mp-a1" d="M155,208 Q213,235 270,260 L450,252 Q530,210 568,205 L688,205 L738,208" fill="none" stroke="none"/>
+<path id="mp-a2" d="M155,236 Q213,248 270,260 L450,258 Q530,258 568,258 L688,258 L738,245" fill="none" stroke="none"/>
+<path id="mp-a3" d="M155,264 Q213,262 270,260 L450,252 Q530,210 568,205 L688,205 L738,208" fill="none" stroke="none"/>
+<!-- llm-sm → pod3 (ar-s3: M450,268 Q530,306 568,310; ar-t3-m: M688,310 L738,302) -->
+<path id="mp-s1" d="M155,292 Q213,276 270,260 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
+<path id="mp-s2" d="M155,320 Q213,291 270,260 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
+<!-- llm-lg → pod4 (ar-s4: M450,275 Q530,355 568,360; ar-t4-m: M688,360 L738,368) -->
+<path id="mp-l1" d="M155,348 Q213,307 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
+<path id="mp-l2" d="M155,376 Q213,324 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
+<!-- batch → pod4 or pod3 (same arrows) -->
+<path id="mp-b1" d="M155,404 Q213,341 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
+<path id="mp-b2" d="M155,432 Q213,358 270,260 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
+<path id="mp-b3" d="M155,460 Q213,376 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
 
 <!-- ══ PACKETS (10 + 2 spare) ══ -->
 <circle class="pk pk-p1" id="pk0" cx="0" cy="0" r="5"/>

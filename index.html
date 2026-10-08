@@ -1036,8 +1036,46 @@ model-repo-llm-large/
         <div class="path-step">
           <div class="path-step-num">5</div>
           <div class="path-step-body">
-            <div class="path-step-title">Monitor and right-size with DCGM Exporter + Prometheus</div>
-            <div class="path-step-desc">GPU Operator deploys DCGM Exporter automatically. Wire it to your existing Prometheus/Grafana stack. Watch <code>DCGM_FI_DEV_MEM_USED</code> and <code>DCGM_FI_PROF_GR_ENGINE_ACTIVE</code> per MIG slice. With one GPU per DC, any saturation directly impacts all workloads — alerting on &gt;80% SM utilization per slice is essential before adding more tenants.</div>
+            <div class="path-step-title">Monitor and right-size — Datadog (preferred) or FOSS stack</div>
+            <div class="path-step-desc">GPU Operator deploys DCGM Exporter automatically. Watch <code>DCGM_FI_DEV_MEM_USED</code> and <code>DCGM_FI_PROF_GR_ENGINE_ACTIVE</code> per MIG slice. With one GPU per DC, saturation of any slice directly impacts all workloads — alert before adding tenants.</div>
+            <div class="table-wrap" style="margin-top:12px">
+              <table>
+                <thead><tr><th>Path</th><th>Components</th><th>Notes</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td><strong>Datadog</strong> <span class="tag tag-ocp" style="font-size:10px">preferred</span></td>
+                    <td>Datadog Agent DaemonSet → Datadog cloud</td>
+                    <td>Agent collects GPU metrics via NVML/DCGM directly. MIG slice metrics appear as <code>nvidia.gpu.*</code> tagged by profile. Monitors + dashboards replace PrometheusRule + Grafana. Zero extra infra if Datadog already in your DC.</td>
+                  </tr>
+                  <tr>
+                    <td><strong>FOSS</strong></td>
+                    <td>DCGM Exporter → Prometheus → Grafana</td>
+                    <td>Fully self-hosted, stays on-prem. Import NVIDIA dashboard ID 12239. Alert via PrometheusRule CR. Right choice if no Datadog license or data-residency requirements block SaaS.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="code-wrap" style="margin-top:10px">
+              <div class="code-bar"><span class="code-lang">yaml — Datadog Agent on GPU node (key config)</span><button class="copy-btn" data-target="tldr-dd">Copy</button></div>
+              <pre id="tldr-dd">datadog:
+  apiKey: &lt;DD_API_KEY&gt;
+  clusterName: ocp-dc1
+  tags:
+    - "env:production"
+    - "dc:dc1"
+  nvidia:
+    enabled: true       <span class="cmt"># enables NVML/DCGM GPU metrics</span>
+  kubelet:
+    tlsVerify: false    <span class="cmt"># required for OCP kubelet cert</span>
+agents:
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists  <span class="cmt"># ensure agent lands on GPU node</span></pre>
+            </div>
+            <div class="caveat" style="margin-top:8px">
+              <strong>Datadog + MIG</strong>
+              Datadog Agent &gt;= 7.40 required for MIG-aware metrics. Each MIG slice surfaces as a separate device with <code>gpu_uuid</code> and <code>mig_profile</code> tags — you get per-slice VRAM, SM utilization, and temperature without any extra configuration.
+            </div>
           </div>
           <span class="path-step-tag tag-sw">Observability</span>
         </div>
