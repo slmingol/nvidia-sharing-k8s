@@ -14,6 +14,9 @@ Covers GPU sharing mechanisms, scheduling, VRAM isolation, hybrid approaches, Tr
 |---|---|
 | `gpu-sharing-k8s.md` | Full reference in Markdown |
 | `index.html` | Rendered interactive reference — also served via GitHub Pages |
+| `flow.html` | Interactive live simulation — 10 concurrent clients, day/night MIG reconfiguration, QoS preemption |
+
+**[→ Launch interactive simulation](https://slmingol.github.io/nvidia-sharing-k8s/flow.html)**
 
 ## Sections
 
