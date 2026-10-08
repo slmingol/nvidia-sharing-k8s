@@ -449,21 +449,21 @@ a.el:hover{text-decoration:underline}
 <circle id="alert-dot" cx="1170" cy="556" r="6" fill="#e05252" opacity="0"/>
 <text id="alert-txt" x="1170" y="548" font-family="IBM Plex Mono" font-size="7" fill="#e05252" text-anchor="middle" opacity="0">ALERT</text>
 
-<!-- ══ MOTION PATHS (invisible) ══ -->
-<!-- audio paths -->
-<path id="mp-a1" d="M155,208 L270,252 L568,205 L738,208" fill="none" stroke="none"/>
-<path id="mp-a2" d="M155,236 L270,258 L568,258 L738,245" fill="none" stroke="none"/>
-<path id="mp-a3" d="M155,264 L270,262 L568,205 L738,208" fill="none" stroke="none"/>
-<!-- llm-sm paths -->
-<path id="mp-s1" d="M155,292 L270,265 L568,314 L738,302" fill="none" stroke="none"/>
-<path id="mp-s2" d="M155,320 L270,268 L568,314 L738,302" fill="none" stroke="none"/>
-<!-- llm-lg paths -->
-<path id="mp-l1" d="M155,348 L270,272 L568,380 L738,368" fill="none" stroke="none"/>
-<path id="mp-l2" d="M155,376 L270,274 L568,380 L738,368" fill="none" stroke="none"/>
-<!-- batch paths -->
-<path id="mp-b1" d="M155,404 L265,356 L320,356 L270,272 L568,380 L738,368" fill="none" stroke="none"/>
-<path id="mp-b2" d="M155,432 L265,356 L320,356 L270,268 L568,314 L738,302" fill="none" stroke="none"/>
-<path id="mp-b3" d="M155,460 L265,356 L320,356 L270,265 L568,380 L738,368" fill="none" stroke="none"/>
+<!-- ══ MOTION PATHS (invisible) — all route through OCP Service hub ══ -->
+<!-- audio paths: fan up from OCP svc to whisper pods -->
+<path id="mp-a1" d="M155,208 Q210,235 270,255 Q400,230 568,205 L738,208" fill="none" stroke="none"/>
+<path id="mp-a2" d="M155,236 Q210,248 270,258 Q400,255 568,258 L738,245" fill="none" stroke="none"/>
+<path id="mp-a3" d="M155,264 Q210,262 270,260 Q400,230 568,205 L738,208" fill="none" stroke="none"/>
+<!-- llm-sm paths: route through OCP svc then down to 2g.20gb pod -->
+<path id="mp-s1" d="M155,292 Q210,275 270,262 Q400,295 568,314 L738,302" fill="none" stroke="none"/>
+<path id="mp-s2" d="M155,320 Q210,295 270,265 Q400,295 568,314 L738,302" fill="none" stroke="none"/>
+<!-- llm-lg paths: route through OCP svc then down to 3g.40gb pod -->
+<path id="mp-l1" d="M155,348 Q210,315 270,268 Q400,340 568,380 L738,368" fill="none" stroke="none"/>
+<path id="mp-l2" d="M155,376 Q210,335 270,270 Q400,345 568,380 L738,368" fill="none" stroke="none"/>
+<!-- batch paths: all via OCP svc (no Turnstone shortcut) -->
+<path id="mp-b1" d="M155,404 Q210,360 270,272 Q400,345 568,380 L738,368" fill="none" stroke="none"/>
+<path id="mp-b2" d="M155,432 Q210,375 270,273 Q400,300 568,314 L738,302" fill="none" stroke="none"/>
+<path id="mp-b3" d="M155,460 Q210,390 270,275 Q400,345 568,380 L738,368" fill="none" stroke="none"/>
 
 <!-- ══ PACKETS (10 + 2 spare) ══ -->
 <circle class="pk pk-p1" id="pk0" cx="0" cy="0" r="5"/>
