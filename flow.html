@@ -62,6 +62,8 @@ body{background:var(--bg);color:var(--fg);font-family:'IBM Plex Sans',system-ui,
 .nr-obs{fill:#1a1510;stroke:#f0a500}
 .nr-client{fill:#161921;stroke:#3a4050}
 .nr-turn{fill:#141820;stroke:#6888ff;stroke-dasharray:4 2}
+.nr-dd{fill:#18082a;stroke:#a855f7}
+.node.ts-active .nr-turn{stroke:#6888ff;stroke-width:2;filter:drop-shadow(0 0 5px rgba(104,136,255,.5))}
 .nl{font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:11px;font-weight:600;fill:#e2e8f0;text-anchor:middle;pointer-events:none}
 .ns{font-family:'IBM Plex Mono',monospace;font-size:9px;fill:#7a8499;text-anchor:middle;pointer-events:none}
 .ns-g{fill:#76b900}.ns-o{fill:#f0a500}.ns-b{fill:#6888ff}
@@ -217,6 +219,7 @@ a.el:hover{text-decoration:underline}
   <marker id="ag" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#76b900"/></marker>
   <marker id="ao" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#f0a500"/></marker>
   <marker id="ab" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#6888ff"/></marker>
+  <marker id="add" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#a855f7"/></marker>
 </defs>
 
 <!-- swimlane backgrounds -->
@@ -260,8 +263,8 @@ a.el:hover{text-decoration:underline}
 <!-- ══ DATA PLANE ARROWS ══ -->
 <!-- clients → OCP service (fan from center of client box) -->
 <path id="ar-c-s" class="ar" d="M155,300 L270,265" marker-end="url(#ad)"/>
-<path id="ar-c-t" class="ar" d="M155,320 Q200,360 265,360" stroke-dasharray="4 2" opacity=".25" marker-end="url(#ad)"/>
-<path id="ar-t-s" class="ar" d="M375,355 Q400,320 400,280" stroke-dasharray="4 2" opacity=".25" marker-end="url(#ad)"/>
+<path id="ar-c-t" class="ar" d="M155,320 Q200,360 265,360" stroke="#6888ff" stroke-dasharray="4 2" opacity=".4" marker-end="url(#ab)"/>
+<path id="ar-t-s" class="ar" d="M375,355 Q400,320 400,280" stroke="#6888ff" stroke-dasharray="4 2" opacity=".4" marker-end="url(#ab)"/>
 <!-- OCP svc → triton pods -->
 <path id="ar-s1" class="ar" d="M450,252 Q530,210 568,205" marker-end="url(#ad)"/>
 <path id="ar-s2" class="ar" d="M450,258 Q530,258 568,258" marker-end="url(#ad)"/>
@@ -313,8 +316,8 @@ a.el:hover{text-decoration:underline}
 <!-- ══ TURNSTONE (optional) ══ -->
 <g class="node" id="node-turnstone" onclick="showDetail('turnstone')">
   <rect class="nr nr-turn" x="265" y="336" width="110" height="40" rx="6"/>
-  <text class="nl" x="320" y="354" fill="#6888ff">Turnstone</text>
-  <text class="ns ns-b" x="320" y="368">agent loop (opt.)</text>
+  <text class="nl" x="320" y="352" fill="#6888ff">Turnstone</text>
+  <text class="ns ns-b" id="ts-count" x="320" y="368">agent loop (opt.)</text>
 </g>
 
 <!-- ══ OCP SERVICE ══ -->
@@ -424,30 +427,23 @@ a.el:hover{text-decoration:underline}
 </g>
 
 <!-- ══ OBS ARROWS ══ -->
-<line id="ar-gpu-dcgm" x1="848" y1="485" x2="848" y2="516" stroke="#f0a500" stroke-width="1" stroke-dasharray="3 2" opacity=".25" marker-end="url(#ao)"/>
-<path id="ar-dcgm-prom" class="ar ar-o" d="M940,536 L1000,536" marker-end="url(#ao)"/>
-<path id="ar-prom-graf" class="ar ar-o" d="M1110,536 Q1140,536 1140,555 Q1140,570 1110,570" stroke-dasharray="none" opacity=".3" marker-end="url(#ao)"/>
+<line id="ar-gpu-dd" x1="848" y1="485" x2="848" y2="516" stroke="#a855f7" stroke-width="1" stroke-dasharray="3 2" opacity=".4" marker-end="url(#add)"/>
+<path id="ar-dd-cloud" class="ar" d="M940,536 L1000,536" stroke="#a855f7" opacity=".4" marker-end="url(#add)"/>
 
 <!-- ══ OBS NODES ══ -->
-<g class="node" id="node-dcgm" onclick="showDetail('dcgm')">
-  <rect class="nr nr-obs" x="830" y="516" width="110" height="40" rx="6"/>
-  <text class="nl" x="885" y="533">DCGM</text>
-  <text class="ns ns-o" x="885" y="547">Exporter</text>
+<g class="node" id="node-dd-agent" onclick="showDetail('dd-agent')">
+  <rect class="nr nr-dd" x="830" y="516" width="110" height="40" rx="6"/>
+  <text class="nl" x="885" y="533" fill="#c084fc">Datadog Agent</text>
+  <text class="ns" x="885" y="547" fill="#7a5599">DaemonSet · NVML</text>
 </g>
-<g class="node" id="node-prom" onclick="showDetail('prometheus')">
-  <rect class="nr nr-obs" x="1000" y="516" width="110" height="40" rx="6"/>
-  <text class="nl" x="1055" y="533">Prometheus</text>
-  <text class="ns ns-o" x="1055" y="547">scrapes GPU metrics</text>
+<g class="node" id="node-dd-cloud" onclick="showDetail('dd-cloud')">
+  <rect class="nr nr-dd" x="1000" y="516" width="150" height="40" rx="6"/>
+  <text class="nl" x="1075" y="533" fill="#c084fc">Datadog</text>
+  <text class="ns" x="1075" y="547" fill="#7a5599">dashboards · monitors · alerts</text>
 </g>
-<g class="node" id="node-graf" onclick="showDetail('grafana')">
-  <rect class="nr nr-obs" x="1080" y="556" width="90" height="40" rx="6" stroke="#e05252"/>
-  <rect class="nr nr-obs" x="1080" y="556" width="90" height="40" rx="6"/>
-  <text class="nl" x="1125" y="573">Grafana</text>
-  <text class="ns ns-o" x="1125" y="587">+ Alerts</text>
-</g>
-<!-- alert indicator (fires when SM > 80%) -->
-<circle id="alert-dot" cx="1170" cy="556" r="6" fill="#e05252" opacity="0"/>
-<text id="alert-txt" x="1170" y="548" font-family="IBM Plex Mono" font-size="7" fill="#e05252" text-anchor="middle" opacity="0">ALERT</text>
+<!-- alert indicator -->
+<circle id="alert-dot" cx="1155" cy="516" r="6" fill="#e05252" opacity="0"/>
+<text id="alert-txt" x="1155" y="508" font-family="IBM Plex Mono" font-size="7" fill="#e05252" text-anchor="middle" opacity="0">ALERT</text>
 
 <!-- ══ MOTION PATHS (invisible) — follow exact arrow geometry ══ -->
 <!-- Each path: client dot → OCP left edge (270,260) → OCP right exit → exact arrow curve → Triton right edge → MIG entry -->
@@ -458,13 +454,13 @@ a.el:hover{text-decoration:underline}
 <!-- llm-sm → pod3 (ar-s3: M450,268 Q530,306 568,310; ar-t3-m: M688,310 L738,302) -->
 <path id="mp-s1" d="M155,292 Q213,276 270,260 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
 <path id="mp-s2" d="M155,320 Q213,291 270,260 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
-<!-- llm-lg → pod4 (ar-s4: M450,275 Q530,355 568,360; ar-t4-m: M688,360 L738,368) -->
-<path id="mp-l1" d="M155,348 Q213,307 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
-<path id="mp-l2" d="M155,376 Q213,324 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
-<!-- batch → pod4 or pod3; control at x=155 keeps path inside client box edge, avoids Turnstone -->
-<path id="mp-b1" d="M155,404 Q155,260 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
-<path id="mp-b2" d="M155,432 Q155,260 270,260 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
-<path id="mp-b3" d="M155,460 Q155,260 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
+<!-- llm-lg → Turnstone → OCP → pod4 -->
+<path id="mp-l1" d="M155,348 Q210,353 265,360 L375,356 Q400,320 400,280 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
+<path id="mp-l2" d="M155,376 Q210,367 265,360 L375,356 Q400,320 400,280 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
+<!-- batch → Turnstone → OCP → pod3 or pod4 -->
+<path id="mp-b1" d="M155,404 Q185,388 265,360 L375,356 Q400,320 400,280 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
+<path id="mp-b2" d="M155,432 Q185,402 265,360 L375,356 Q400,320 400,280 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
+<path id="mp-b3" d="M155,460 Q185,416 265,360 L375,356 Q400,320 400,280 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
 
 <!-- ══ PACKETS (10 + 2 spare) ══ -->
 <circle class="pk pk-p1" id="pk0" cx="0" cy="0" r="5"/>
@@ -484,7 +480,7 @@ a.el:hover{text-decoration:underline}
   <text x="13" y="8" font-family="IBM Plex Sans" font-size="9" fill="#7a8499">Management</text>
   <rect x="110" y="0" width="9" height="9" rx="2" fill="#6888ff" opacity=".5"/>
   <text x="123" y="8" font-family="IBM Plex Sans" font-size="9" fill="#7a8499">Data / Journey</text>
-  <rect x="222" y="0" width="9" height="9" rx="2" fill="#f0a500" opacity=".5"/>
+  <rect x="222" y="0" width="9" height="9" rx="2" fill="#a855f7" opacity=".5"/>
   <text x="235" y="8" font-family="IBM Plex Sans" font-size="9" fill="#7a8499">Observability</text>
   <circle cx="325" cy="5" r="4" fill="#76b900"/>
   <text x="333" y="8" font-family="IBM Plex Sans" font-size="9" fill="#7a8499">P1 Audio</text>
@@ -519,6 +515,7 @@ let currentProfile = 'day';
 let reconfiguring = false;
 let simTimer = null;
 let frameHandle = null;
+let tsActive = 0;
 
 /* ══════════════════════════════════════════
    CLIENT DEFINITIONS
@@ -529,11 +526,11 @@ const CLIENTS = [
   { id:2, pathId:'mp-a3', pkId:'pk2', type:'audio', priority:1, slotKey:'s1', label:'Audio 3',  fireMs:3400, phase:1600 },
   { id:3, pathId:'mp-s1', pkId:'pk3', type:'llmsm', priority:2, slotKey:'s3', label:'LLM-sm 1', fireMs:3800, phase:400  },
   { id:4, pathId:'mp-s2', pkId:'pk4', type:'llmsm', priority:2, slotKey:'s3', label:'LLM-sm 2', fireMs:4200, phase:2000 },
-  { id:5, pathId:'mp-l1', pkId:'pk5', type:'llmlg', priority:2, slotKey:'s4', label:'LLM-lg 1', fireMs:5000, phase:1200 },
-  { id:6, pathId:'mp-l2', pkId:'pk6', type:'llmlg', priority:2, slotKey:'s4', label:'LLM-lg 2', fireMs:5800, phase:3000 },
-  { id:7, pathId:'mp-b1', pkId:'pk7', type:'batch', priority:3, slotKey:'s4', label:'Batch 1',  fireMs:7000, phase:600  },
-  { id:8, pathId:'mp-b2', pkId:'pk8', type:'batch', priority:3, slotKey:'s3', label:'Batch 2',  fireMs:7400, phase:2800 },
-  { id:9, pathId:'mp-b3', pkId:'pk9', type:'batch', priority:3, slotKey:'s4', label:'Batch 3',  fireMs:8000, phase:4000 },
+  { id:5, pathId:'mp-l1', pkId:'pk5', type:'llmlg', priority:2, slotKey:'s4', label:'LLM-lg 1', fireMs:5000, phase:1200, viaTurnstone:true },
+  { id:6, pathId:'mp-l2', pkId:'pk6', type:'llmlg', priority:2, slotKey:'s4', label:'LLM-lg 2', fireMs:5800, phase:3000, viaTurnstone:true },
+  { id:7, pathId:'mp-b1', pkId:'pk7', type:'batch', priority:3, slotKey:'s4', label:'Batch 1',  fireMs:7000, phase:600,  viaTurnstone:true },
+  { id:8, pathId:'mp-b2', pkId:'pk8', type:'batch', priority:3, slotKey:'s3', label:'Batch 2',  fireMs:7400, phase:2800, viaTurnstone:true },
+  { id:9, pathId:'mp-b3', pkId:'pk9', type:'batch', priority:3, slotKey:'s4', label:'Batch 3',  fireMs:8000, phase:4000, viaTurnstone:true },
 ];
 
 /* ══════════════════════════════════════════
@@ -805,11 +802,13 @@ function fireClient(client) {
   activateClientDot(client.id, true);
 
   // animate packet
+  if (client.viaTurnstone) updateTurnstoneCount(1);
   animatePacket(client, () => {
     slot.cur = Math.max(0, slot.cur - 1);
     updateUtilBar(client.slotKey);
     updateActiveCount();
     activateClientDot(client.id, false);
+    if (client.viaTurnstone) updateTurnstoneCount(-1);
     scheduleNextFire(client);
   });
 }
@@ -930,6 +929,17 @@ function updateAllUtilBars() {
   Object.keys(SLICES).forEach(k => updateUtilBar(k));
 }
 
+function updateTurnstoneCount(delta) {
+  tsActive = Math.max(0, tsActive + delta);
+  const el = document.getElementById('ts-count');
+  if (el) el.textContent = tsActive > 0 ? tsActive + ' routing' : 'agent loop (opt.)';
+  const node = document.getElementById('node-turnstone');
+  if (node) {
+    if (tsActive > 0) node.classList.add('ts-active');
+    else node.classList.remove('ts-active');
+  }
+}
+
 function updateQueueText(slot, label) {
   const qt = document.getElementById(slot.qId);
   if (qt) { qt.textContent = label; qt.className = 'queue-txt queue-txt-full'; }
@@ -979,10 +989,10 @@ function toggleTelemetry() {
   const btn = document.getElementById('tel-btn');
   btn.className = 'btn' + (telOn ? ' on-orange' : '');
   btn.textContent = telOn ? '◉ Telemetry' : 'Telemetry';
-  ['node-dcgm','node-prom','node-graf'].forEach(id => {
+  ['node-dd-agent','node-dd-cloud'].forEach(id => {
     document.getElementById(id)?.classList.toggle('tel', telOn);
   });
-  ['ar-gpu-dcgm','ar-dcgm-prom','ar-prom-graf'].forEach(id => {
+  ['ar-gpu-dd','ar-dd-cloud'].forEach(id => {
     document.getElementById(id)?.classList.toggle('tel', telOn);
   });
 }
@@ -1115,10 +1125,9 @@ const DETAILS = {
   <span class="k">ports</span>:
     - { <span class="k">name</span>: <span class="v">grpc</span>, <span class="k">port</span>: <span class="n">8001</span> }
     - { <span class="k">name</span>: <span class="v">http</span>, <span class="k">port</span>: <span class="n">8000</span> }</pre></div>`},
-  turnstone:{icon:'🤖',iconBg:'#14182a',title:'Turnstone',sub:'Self-hosted agent orchestration · optional',
-    body:`<div class="ds"><div class="dst">What it is</div><p><a class="el" href="https://github.com/turnstonelabs/turnstone" target="_blank">turnstonelabs/turnstone</a> — Apache 2.0, Python 3.13+. Self-hosted, local-first agent orchestration. Sits above Triton/vLLM, drives the LLM agent loop, tool dispatch, multi-turn workstreams. No telemetry.</p></div>
-<div class="ds"><div class="dst">Stack position</div>
-<span class="tag tag-g">Serving: Triton+vLLM</span><span class="tag tag-b">Orchestration: Turnstone</span><span class="tag tag-o">Tools: MCP</span></div>
+  turnstone:{icon:'🤖',iconBg:'#14182a',title:'Turnstone',sub:'Agent orchestration · routes LLM-lg + Batch',
+    body:`<div class="ds"><div class="dst">What it is</div><p><a class="el" href="https://github.com/turnstonelabs/turnstone" target="_blank">turnstonelabs/turnstone</a> — Apache 2.0, Python 3.13+. Self-hosted agent orchestration above Triton/vLLM. Handles multi-step agent loops, tool dispatch (MCP), and multi-turn context. No telemetry.</p></div>
+<div class="ds"><div class="dst">In this diagram</div><p><strong>LLM-lg and Batch clients route through Turnstone</strong> — these workloads benefit from agent orchestration (chained model calls, RAG tool use, retry logic). Audio (P1) and LLM-sm (P2) bypass Turnstone and hit OCP Service directly.</p></div>
 <div class="ds"><div class="dst">Routing config</div>
 <pre class="dc"><span class="k">models</span>:
   - <span class="k">name</span>: <span class="v">llm-large</span>
@@ -1126,7 +1135,9 @@ const DETAILS = {
     <span class="k">model</span>: <span class="v">mistral-22b</span>
   - <span class="k">name</span>: <span class="v">llm-small</span>
     <span class="k">api_base</span>: <span class="s">http://triton-llm-small.svc:8000/v1</span>
-    <span class="k">model</span>: <span class="v">llama3-8b</span></pre></div>`},
+    <span class="k">model</span>: <span class="v">llama3-8b</span></pre></div>
+<div class="ds"><div class="dst">Stack position</div>
+<span class="tag tag-g">Serving: Triton+vLLM</span><span class="tag tag-b">Orchestration: Turnstone</span><span class="tag tag-o">Tools: MCP</span></div>`},
   'triton-audio':{icon:'🎙',iconBg:'#1e1a10',title:'Triton — Whisper Backend',sub:'1g.10gb slice · 10 GB VRAM · P1',
     body:`<div class="ds"><div class="dst">Resource request</div>
 <pre class="dc"><span class="k">resources</span>:
@@ -1177,33 +1188,37 @@ oc describe node &lt;gpu-node&gt; | grep mig
 <span class="c"># nvidia.com/mig-1g.10gb: 2
 # nvidia.com/mig-2g.20gb: 1
 # nvidia.com/mig-3g.40gb: 1</span></pre></div>`},
-  dcgm:{icon:'📊',iconBg:'#1a1510',title:'DCGM Exporter',sub:'Per-MIG-slice metrics → Prometheus',
-    body:`<div class="ds"><div class="dst">Key metrics</div>
-<div class="mr"><span class="mn">DCGM_FI_DEV_MEM_USED</span><span class="md">VRAM used per slice</span></div>
-<div class="mr"><span class="mn">DCGM_FI_PROF_GR_ENGINE_ACTIVE</span><span class="md">SM utilization (0–1)</span></div>
-<div class="mr"><span class="mn">DCGM_FI_DEV_GPU_TEMP</span><span class="md">temperature (°C)</span></div>
-<div class="mr"><span class="mn">DCGM_FI_DEV_POWER_USAGE</span><span class="md">power draw (W)</span></div>
-<div class="mr"><span class="mn">DCGM_FI_PROF_DRAM_ACTIVE</span><span class="md">HBM2e bandwidth util</span></div></div>
-<div class="ds"><div class="dst">MIG labels</div>
-<pre class="dc">gpu="0" gpu_i_id="3" gpu_i_profile="1g.10gb"
-exported_pod="triton-whisper-..."</pre></div>`},
-  prometheus:{icon:'🔥',iconBg:'#1a1510',title:'Prometheus',sub:'GPU metrics + alert rules',
-    body:`<div class="ds"><div class="dst">Alert rule — SM saturation</div>
-<pre class="dc"><span class="k">alert</span>: <span class="v">GPUSliceHighUtil</span>
-<span class="k">expr</span>: >
-  DCGM_FI_PROF_GR_ENGINE_ACTIVE
-    {gpu_i_profile!=""} > 0.80
-<span class="k">for</span>: <span class="v">5m</span>
-<span class="k">labels</span>:
-  <span class="k">severity</span>: <span class="v">warning</span></pre></div>`},
-  grafana:{icon:'📈',iconBg:'#1a1510',title:'Grafana + Alertmanager',sub:'GPU observability · dashboard 12239',
-    body:`<div class="ds"><div class="dst">Recommended panels</div><ul>
-<li>VRAM used per MIG slice (stacked bar)</li>
-<li>SM utilization per slice (time series)</li>
-<li>GPU temperature gauge (alert at 85°C)</li>
-<li>Request throughput — <code>nv_inference_request_success</code></li>
-<li>Power draw (capacity planning; A100 SXM4: 400W TDP)</li></ul></div>
-<div class="ds"><div class="dst">Import</div><p>NVIDIA DCGM dashboard ID <strong>12239</strong> on grafana.com. Filter by <code>gpu_i_profile</code> for per-slice views.</p></div>`}
+  'dd-agent':{icon:'🐶',iconBg:'#18082a',title:'Datadog Agent',sub:'DaemonSet on GPU node · NVML/DCGM',
+    body:`<div class="ds"><div class="dst">GPU metrics collected</div>
+<div class="mr"><span class="mn">nvidia.gpu.memory.used</span><span class="md">VRAM used per MIG slice</span></div>
+<div class="mr"><span class="mn">nvidia.gpu.utilization</span><span class="md">SM utilization (0–100)</span></div>
+<div class="mr"><span class="mn">nvidia.gpu.temperature</span><span class="md">junction temperature (°C)</span></div>
+<div class="mr"><span class="mn">nvidia.gpu.power.draw</span><span class="md">power draw (W)</span></div></div>
+<div class="ds"><div class="dst">Helm config (key flags)</div>
+<pre class="dc"><span class="k">datadog</span>:
+  <span class="k">apiKey</span>: &lt;DD_API_KEY&gt;
+  <span class="k">clusterName</span>: <span class="v">ocp-dc1</span>
+  <span class="k">nvidia</span>:
+    <span class="k">enabled</span>: <span class="n">true</span>   <span class="c"># NVML/DCGM metrics</span>
+  <span class="k">kubelet</span>:
+    <span class="k">tlsVerify</span>: <span class="n">false</span>  <span class="c"># OCP kubelet cert</span>
+<span class="k">agents</span>:
+  <span class="k">tolerations</span>:
+    - <span class="k">key</span>: <span class="v">nvidia.com/gpu</span>
+      <span class="k">operator</span>: <span class="v">Exists</span></pre></div>
+<div class="ds"><div class="dst">MIG-aware tagging (requires Agent ≥ 7.40)</div><p>Each MIG slice surfaces as a separate device with <code>gpu_uuid</code> and <code>mig_profile</code> tags. Per-slice VRAM, SM utilization, and temperature without extra config.</p></div>`},
+  'dd-cloud':{icon:'☁',iconBg:'#18082a',title:'Datadog',sub:'Dashboards · Monitors · Alerts',
+    body:`<div class="ds"><div class="dst">MIG slice monitor (example)</div>
+<pre class="dc">avg(last_5m):avg:nvidia.gpu.utilization{
+  mig_profile:1g.10gb,
+  cluster:ocp-dc1
+} by {mig_profile} > 80</pre></div>
+<div class="ds"><div class="dst">Advantages vs FOSS stack</div><ul>
+<li>No Prometheus + Grafana infra to operate</li>
+<li>Built-in anomaly detection on GPU metrics</li>
+<li>Correlated with pod/node events from Datadog k8s integration</li>
+<li>Alerting via PagerDuty / Slack / OpsGenie out-of-box</li></ul></div>
+<div class="ds"><div class="dst">FOSS alternative</div><p>If Datadog is not available or data must stay on-prem: DCGM Exporter → Prometheus → Grafana (dashboard 12239). See index.html TL;DR step 5 for both paths.</p></div>`}
 };
 
 function showDetail(id) {
