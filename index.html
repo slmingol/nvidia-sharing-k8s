@@ -760,6 +760,7 @@
       <li><a href="#hybrid">Hybrid Approaches</a></li>
       <li><a href="#vram-isolation">VRAM Isolation Landscape</a></li>
       <li><a href="#triton">Triton vs. vLLM</a></li>
+      <li><a href="#turnstone">Agent Orchestration</a></li>
       <li><a href="#stack">6 — Recommended Stack</a></li>
       <li><a href="#vms">7 — VMs: Boon or Bust?</a>
         <ul class="toc-list toc-sub">
@@ -2019,6 +2020,57 @@ CUDA_MPS_PINNED_DEVICE_MEM_LIMIT="0=4096m" python inference.py</pre>
       <div class="caveat caveat-danger">
         <strong>Triton does not solve K8s-level isolation</strong>
         Concurrent model execution within a Triton instance has no VRAM isolation between models. A misbehaving or memory-leaking model inside Triton can OOM the entire server and kill all co-located models — the same noisy-neighbor problem as MPS. For hard per-tenant isolation, MIG is still required at the K8s layer beneath Triton.
+      </div>
+    </section>
+
+    <!-- TURNSTONE -->
+    <section class="section" id="turnstone">
+      <h2><span class="sec-num">—</span> Agent Orchestration: Turnstone</h2>
+      <p>
+        <a href="https://github.com/turnstonelabs/turnstone" target="_blank" rel="noopener">Turnstone</a> is a self-hosted, local-first agent orchestration layer (Apache 2.0, Python 3.13+). It sits <em>above</em> your inference stack — Triton and vLLM do the model serving; Turnstone drives the agent loop, routes tool calls, and manages multi-turn workstreams across your cluster.
+      </p>
+
+      <h3>Where it fits in your stack</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Layer</th><th>Component</th><th>Role</th></tr></thead>
+          <tbody>
+            <tr><td>Inference</td><td>Triton + vLLM backend</td><td>Serves models on MIG slices; OpenAI-compatible API</td></tr>
+            <tr><td>Orchestration</td><td><strong>Turnstone</strong></td><td>Agent loop, tool dispatch, multi-workstream routing</td></tr>
+            <tr><td>Tools</td><td>MCP servers</td><td>Shell, file ops, search, cluster APIs — exposed to agents</td></tr>
+            <tr><td>Infra</td><td>OCP + GPU Operator + MIG</td><td>Hardware isolation, scheduling, observability</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Key fit points</h3>
+      <ul>
+        <li><strong>OpenAI-compatible target</strong> — Turnstone calls any <code>/v1/chat/completions</code> endpoint; your Triton vLLM backend exposes exactly that. Point Turnstone at the pod's ClusterIP service.</li>
+        <li><strong>Local-first / no telemetry</strong> — aligns with on-prem DC requirements. No phone-home, no SaaS dependency.</li>
+        <li><strong>Cluster-native</strong> — tasks fan out across nodes; your OCP cluster with multiple MIG slices maps directly to its multi-machine model.</li>
+        <li><strong>MCP tool servers</strong> — any MCP server (kubectl, custom APIs, S3, databases) plugs in as agent tools, same protocol Claude Code uses.</li>
+        <li><strong>LLM risk judge</strong> — evaluates each tool call before execution. Useful when agents have kubectl or shell access in a production cluster.</li>
+      </ul>
+
+      <h3>Routing agents to MIG slices</h3>
+      <p>Configure separate Turnstone endpoints per slice type so heavy reasoning steps land on the larger slice and lighter tool calls use the smaller one:</p>
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">yaml — Turnstone model config (conceptual)</span><button class="copy-btn" data-target="turnstone-cfg">Copy</button></div>
+        <pre id="turnstone-cfg">models:
+  - name: llm-large          # reasoning, planning, summarization
+    api_base: http://triton-llm-large.gpu-operator.svc.cluster.local:8000/v1
+    model: mistral-22b
+  - name: llm-small          # tool-call generation, classification
+    api_base: http://triton-llm-small.gpu-operator.svc.cluster.local:8000/v1
+    model: llama3-8b
+  - name: audio-asr          # audio → text (Whisper via Triton HTTP)
+    api_base: http://triton-audio.gpu-operator.svc.cluster.local:8000/v2
+    model: whisper-large-v3</pre>
+      </div>
+
+      <div class="caveat" style="margin-top:12px">
+        <strong>Turnstone is orchestration, not isolation</strong>
+        Routing different agent steps to different Triton pods is a scheduling choice, not a security boundary. VRAM isolation is still provided by MIG at the hardware layer — Turnstone sits above all of that and has no visibility into GPU resource allocation.
       </div>
     </section>
 
