@@ -461,10 +461,10 @@ a.el:hover{text-decoration:underline}
 <!-- llm-lg → pod4 (ar-s4: M450,275 Q530,355 568,360; ar-t4-m: M688,360 L738,368) -->
 <path id="mp-l1" d="M155,348 Q213,307 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
 <path id="mp-l2" d="M155,376 Q213,324 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
-<!-- batch → pod4 or pod3 (same arrows) -->
-<path id="mp-b1" d="M155,404 Q213,341 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
-<path id="mp-b2" d="M155,432 Q213,358 270,260 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
-<path id="mp-b3" d="M155,460 Q213,376 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
+<!-- batch → pod4 or pod3; control at x=155 keeps path inside client box edge, avoids Turnstone -->
+<path id="mp-b1" d="M155,404 Q155,260 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
+<path id="mp-b2" d="M155,432 Q155,260 270,260 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
+<path id="mp-b3" d="M155,460 Q155,260 270,260 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
 
 <!-- ══ PACKETS (10 + 2 spare) ══ -->
 <circle class="pk pk-p1" id="pk0" cx="0" cy="0" r="5"/>
