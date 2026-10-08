@@ -178,6 +178,20 @@ a.el:hover{text-decoration:underline}
 .ld{width:9px;height:9px;border-radius:2px;flex-shrink:0}
 .qos-legend{display:flex;gap:10px;margin-left:auto;align-items:center;font-size:10px;color:var(--fg-muted);font-family:'IBM Plex Mono',monospace}
 .qos-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+
+/* ── light mode ── */
+:root[data-theme="light"]{
+  --bg:#f4f6f8;--surface:#ffffff;--surface2:#eef0f4;--border:#d0d5e0;
+  --fg:#1a1f2e;--fg-muted:#5a6070;--accent:#4a8000;--accent-dim:rgba(74,128,0,.12);
+  --orange:#c07800;--orange-dim:rgba(192,120,0,.12);--blue:#3a5acc;--blue-dim:rgba(58,90,204,.12);
+  --red:#c03030;--red-dim:rgba(192,48,48,.12);--purple:#7c3aed;--purple-dim:rgba(124,58,237,.12);
+  color-scheme:light;
+}
+:root[data-theme="light"] .canvas-wrap svg{filter:invert(1) hue-rotate(180deg)}
+:root[data-theme="light"] .detail{background:#fff;border-color:#d0d5e0;color:#1a1f2e}
+:root[data-theme="light"] .detail-hdr{border-color:#e0e4ec}
+:root[data-theme="light"] pre.dc{background:#f0f2f6;color:#2a3040}
+:root[data-theme="light"] .reconf-overlay{background:rgba(200,210,220,.85)}
 </style>
 </head>
 <body>
@@ -197,6 +211,7 @@ a.el:hover{text-decoration:underline}
   <button class="btn on-green" id="run-btn" onclick="toggleSim()">▶ Run</button>
   <button class="btn" id="tel-btn" onclick="toggleTelemetry()">Telemetry</button>
   <button class="btn" id="qos-btn" onclick="toggleQos()">QoS View</button>
+  <button class="btn" id="theme-btn" onclick="toggleTheme()" title="Toggle light/dark">☀</button>
   <div class="hdr-sep"></div>
   <div class="timeline-wrap">
     <div class="clock" id="clock">8:00 AM</div>
@@ -1021,6 +1036,19 @@ function toggleQos() {
 function setStatus(msg) {
   document.getElementById('status-bar').textContent = msg;
 }
+
+function toggleTheme() {
+  const root = document.documentElement;
+  const isLight = root.getAttribute('data-theme') === 'light';
+  root.setAttribute('data-theme', isLight ? 'dark' : 'light');
+  document.getElementById('theme-btn').textContent = isLight ? '☀' : '🌙';
+  try { localStorage.setItem('flow-theme', isLight ? 'dark' : 'light'); } catch(e) {}
+}
+/* restore saved theme */
+try {
+  const t = localStorage.getItem('flow-theme');
+  if (t) { document.documentElement.setAttribute('data-theme', t); document.getElementById('theme-btn').textContent = t === 'light' ? '🌙' : '☀'; }
+} catch(e) {}
 
 /* ══════════════════════════════════════════
    DETAIL PANEL
