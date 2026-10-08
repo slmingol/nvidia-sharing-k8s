@@ -1,0 +1,1071 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPU Sharing Flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  --bg: #0d0f14;
+  --surface: #161921;
+  --surface2: #1e222d;
+  --border: #2a2f3d;
+  --fg: #e2e8f0;
+  --fg-muted: #7a8499;
+  --accent: #76b900;
+  --accent-dim: rgba(118,185,0,0.18);
+  --orange: #f0a500;
+  --orange-dim: rgba(240,165,0,0.15);
+  --blue: #6888ff;
+  --blue-dim: rgba(104,136,255,0.15);
+  --red: #e05252;
+  --red-dim: rgba(224,82,82,0.15);
+  color-scheme: dark;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font-family:'IBM Plex Sans',system-ui,sans-serif;min-height:100vh;overflow-x:hidden;display:flex;flex-direction:column}
+
+/* ── header ── */
+.hdr{
+  display:flex;align-items:center;gap:12px;padding:10px 20px;
+  background:var(--surface);border-bottom:1px solid var(--border);
+  flex-wrap:wrap;position:sticky;top:0;z-index:100;
+}
+.hdr-title{font-size:13px;font-weight:700;color:var(--fg);letter-spacing:.03em;margin-right:4px;white-space:nowrap}
+.hdr-title span{color:var(--accent)}
+.wl-tabs{display:flex;gap:4px}
+.wl-btn{
+  padding:5px 12px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;
+  border:1px solid var(--border);background:transparent;color:var(--fg-muted);
+  transition:all .15s;font-family:inherit;white-space:nowrap;
+}
+.wl-btn:hover{border-color:var(--fg-muted);color:var(--fg)}
+.wl-btn.active-audio{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+.wl-btn.active-llmsm{background:var(--blue-dim);border-color:var(--blue);color:var(--blue)}
+.wl-btn.active-llmlg{background:var(--blue-dim);border-color:var(--blue);color:var(--blue)}
+.hdr-sep{width:1px;height:24px;background:var(--border)}
+.sim-btn{
+  padding:5px 14px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;
+  border:1px solid var(--accent);background:var(--accent-dim);color:var(--accent);
+  transition:all .15s;font-family:inherit;
+}
+.sim-btn:hover{background:var(--accent);color:#000}
+.sim-btn:disabled{opacity:.4;cursor:not-allowed}
+.tel-btn{
+  padding:5px 12px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;
+  border:1px solid var(--border);background:transparent;color:var(--fg-muted);
+  transition:all .15s;font-family:inherit;
+}
+.tel-btn.on{background:var(--orange-dim);border-color:var(--orange);color:var(--orange)}
+.status-bar{
+  margin-left:auto;font-size:11px;color:var(--fg-muted);
+  font-family:'IBM Plex Mono',monospace;background:var(--surface2);
+  border:1px solid var(--border);border-radius:5px;padding:4px 10px;
+  white-space:nowrap;
+}
+
+/* ── canvas ── */
+.canvas-wrap{flex:1;overflow:auto;padding:0;position:relative}
+.canvas-wrap svg{display:block;min-width:900px;width:100%;height:auto}
+
+/* ── SVG element classes ── */
+.lane-bg-mgmt{fill:rgba(118,185,0,0.03)}
+.lane-bg-data{fill:rgba(104,136,255,0.02)}
+.lane-bg-obs{fill:rgba(240,165,0,0.03)}
+.lane-label{font-family:'IBM Plex Mono',monospace;font-size:9px;fill:var(--fg-muted,#7a8499);letter-spacing:.12em;text-transform:uppercase;opacity:.7}
+
+/* nodes */
+.node{cursor:pointer;transition:opacity .2s}
+.node:hover .node-rect{filter:brightness(1.15)}
+.node-rect{stroke-width:1.5;rx:6}
+.node-rect-mgmt{fill:#1a1f2a;stroke:#76b900}
+.node-rect-data{fill:#1a1f2a;stroke:#445}
+.node-rect-triton{fill:#1e1a10;stroke:#f0a500}
+.node-rect-llm{fill:#14182a;stroke:#6888ff}
+.node-rect-gpu{fill:#111a0a;stroke:#76b900;stroke-width:2}
+.node-rect-obs{fill:#1a1510;stroke:#f0a500;stroke-width:1.5}
+.node-rect-alert{fill:#1a1010;stroke:#e05252;stroke-width:1.5}
+.node-rect-turn{fill:#141820;stroke:#6888ff;stroke-dasharray:4 2}
+.node-rect-client{fill:#161921;stroke:#445}
+.node-label{font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:11px;font-weight:600;fill:#e2e8f0;text-anchor:middle;pointer-events:none}
+.node-sub{font-family:'IBM Plex Mono',monospace;font-size:9px;fill:#7a8499;text-anchor:middle;pointer-events:none}
+.node-sub-accent{fill:#76b900}
+.node-sub-orange{fill:#f0a500}
+.node-sub-blue{fill:#6888ff}
+
+/* arrows */
+.arrow{fill:none;stroke:#2a2f3d;stroke-width:1.5;marker-end:url(#arr-dim)}
+.arrow-mgmt{stroke:#76b900;opacity:.4;marker-end:url(#arr-green)}
+.arrow-obs{stroke:#f0a500;opacity:.3;marker-end:url(#arr-orange)}
+.arrow-vert{stroke:#2a2f3d;stroke-dasharray:3 3;opacity:.4;marker-end:url(#arr-dim)}
+
+/* active/dim states */
+.node.dimmed{opacity:.2}
+.arrow.dimmed{opacity:.05}
+.arrow.active-path{stroke-width:2.5;opacity:1;stroke-dasharray:6 3;animation:dashflow 1s linear infinite}
+.arrow.active-path-audio{stroke:#76b900;marker-end:url(#arr-green)}
+.arrow.active-path-llm{stroke:#6888ff;marker-end:url(#arr-blue)}
+.node.active-node .node-rect-mgmt,.node.active-node .node-rect-data,.node.active-node .node-rect-gpu{filter:brightness(1.3) drop-shadow(0 0 6px rgba(118,185,0,.5))}
+.node.active-node .node-rect-triton{filter:brightness(1.3) drop-shadow(0 0 6px rgba(240,165,0,.5))}
+.node.active-node .node-rect-llm{filter:brightness(1.3) drop-shadow(0 0 6px rgba(104,136,255,.5))}
+
+/* telemetry active */
+.arrow.tel-active{stroke:#f0a500;stroke-width:2;opacity:.9;marker-end:url(#arr-orange);animation:dashflow .8s linear infinite}
+.node.tel-active .node-rect-obs,.node.tel-active .node-rect-alert{filter:brightness(1.4) drop-shadow(0 0 5px rgba(240,165,0,.5))}
+
+@keyframes dashflow{to{stroke-dashoffset:-18}}
+
+/* MIG bars inside GPU */
+.mig-bar-bg{fill:#0d1a04;rx:2}
+.mig-bar{rx:2;transition:opacity .3s}
+.mig-bar-1g{fill:#3a5c00}
+.mig-bar-2g{fill:#4a7200}
+.mig-bar-3g{fill:#5a8a00}
+.mig-bar.active-slice{fill:#76b900;filter:drop-shadow(0 0 4px #76b900)}
+.mig-label{font-family:'IBM Plex Mono',monospace;font-size:8px;fill:#7a8499;dominant-baseline:middle;pointer-events:none}
+.mig-label-active{fill:#76b900}
+
+/* simulate packet */
+.packet{r:5;fill:#76b900;filter:drop-shadow(0 0 5px #76b900);opacity:0;pointer-events:none}
+.packet-llm{fill:#6888ff;filter:drop-shadow(0 0 5px #6888ff)}
+
+/* detail panel */
+.detail{
+  position:fixed;top:0;right:0;bottom:0;width:380px;max-width:95vw;
+  background:var(--surface);border-left:1px solid var(--border);
+  transform:translateX(100%);transition:transform .25s ease;
+  display:flex;flex-direction:column;z-index:200;overflow:hidden;
+}
+.detail.open{transform:translateX(0)}
+.detail-hdr{
+  display:flex;align-items:center;gap:10px;
+  padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.detail-icon{
+  width:32px;height:32px;border-radius:6px;display:flex;align-items:center;
+  justify-content:center;font-size:15px;flex-shrink:0;
+}
+.detail-title{font-size:14px;font-weight:700;flex:1}
+.detail-sub{font-size:11px;color:var(--fg-muted);font-family:'IBM Plex Mono',monospace}
+.detail-close{
+  width:28px;height:28px;border-radius:5px;display:flex;align-items:center;
+  justify-content:center;cursor:pointer;border:1px solid var(--border);
+  background:transparent;color:var(--fg-muted);font-size:16px;line-height:1;
+  transition:all .15s;flex-shrink:0;
+}
+.detail-close:hover{background:var(--surface2);color:var(--fg)}
+.detail-body{flex:1;overflow-y:auto;padding:16px}
+.detail-body p,.detail-body li{font-size:12.5px;line-height:1.6;color:var(--fg-muted);margin-bottom:8px}
+.detail-body strong{color:var(--fg)}
+.detail-body ul{padding-left:16px;margin-bottom:10px}
+.detail-section{margin-bottom:16px}
+.detail-section-title{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-muted);margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+pre.detail-code{
+  background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  padding:10px 12px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;
+  line-height:1.55;overflow-x:auto;white-space:pre;color:#c9d3e0;margin-bottom:10px;
+}
+pre.detail-code .k{color:#76b900}
+pre.detail-code .v{color:#a8d070}
+pre.detail-code .c{color:#4a5568;font-style:italic}
+pre.detail-code .s{color:#f0a500}
+pre.detail-code .n{color:#6888ff}
+.metric-row{display:flex;gap:6px;align-items:baseline;margin-bottom:5px}
+.metric-name{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--accent);flex:1}
+.metric-desc{font-size:11px;color:var(--fg-muted)}
+.mig-detail-bar{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.mig-detail-swatch{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+.mig-detail-info{font-size:11px}
+.mig-detail-name{font-weight:700;color:var(--accent);font-family:'IBM Plex Mono',monospace}
+.mig-detail-desc{color:var(--fg-muted)}
+.tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;font-family:'IBM Plex Mono',monospace;margin:2px}
+.tag-green{background:var(--accent-dim);color:var(--accent);border:1px solid rgba(118,185,0,.3)}
+.tag-blue{background:var(--blue-dim);color:var(--blue);border:1px solid rgba(104,136,255,.3)}
+.tag-orange{background:var(--orange-dim);color:var(--orange);border:1px solid rgba(240,165,0,.3)}
+a.ext-link{color:var(--blue);text-decoration:none;font-size:12px}
+a.ext-link:hover{text-decoration:underline}
+
+/* overlay (click-outside to close detail) */
+.overlay{position:fixed;inset:0;z-index:190;display:none}
+.overlay.open{display:block}
+
+/* legend */
+.legend{display:flex;gap:16px;padding:8px 20px;border-top:1px solid var(--border);background:var(--surface);flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--fg-muted)}
+.legend-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <span class="hdr-title"><span>GPU Sharing</span> — Interactive Flow</span>
+  <div class="hdr-sep"></div>
+  <div class="wl-tabs">
+    <button class="wl-btn active-audio" id="wl-audio" onclick="selectWorkload('audio')">Audio (Whisper)</button>
+    <button class="wl-btn" id="wl-llmsm" onclick="selectWorkload('llmsm')">LLM 8B</button>
+    <button class="wl-btn" id="wl-llmlg" onclick="selectWorkload('llmlg')">LLM 22B</button>
+  </div>
+  <div class="hdr-sep"></div>
+  <button class="sim-btn" id="sim-btn" onclick="simulate()">▶ Simulate Request</button>
+  <button class="tel-btn" id="tel-btn" onclick="toggleTelemetry()">Telemetry</button>
+  <div class="status-bar" id="status-bar">workload: whisper · slice: 1g.10gb · vram: 10 GB · model: whisper-large-v3</div>
+</div>
+
+<div class="canvas-wrap">
+<svg id="diagram" viewBox="0 0 1110 560" role="img" aria-label="GPU Sharing Architecture Flow — three swimlanes showing management, data, and observability planes">
+  <defs>
+    <marker id="arr-dim" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#2a2f3d"/></marker>
+    <marker id="arr-green" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#76b900"/></marker>
+    <marker id="arr-orange" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#f0a500"/></marker>
+    <marker id="arr-blue" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#6888ff"/></marker>
+  </defs>
+
+  <!-- swimlane backgrounds -->
+  <rect class="lane-bg-mgmt" x="0" y="0" width="1110" height="130"/>
+  <rect class="lane-bg-data" x="0" y="130" width="1110" height="320"/>
+  <rect class="lane-bg-obs" x="0" y="450" width="1110" height="110"/>
+
+  <!-- lane dividers -->
+  <line x1="0" y1="130" x2="1110" y2="130" stroke="#2a2f3d" stroke-width="1" stroke-dasharray="4 4"/>
+  <line x1="0" y1="450" x2="1110" y2="450" stroke="#2a2f3d" stroke-width="1" stroke-dasharray="4 4"/>
+
+  <!-- lane labels -->
+  <text class="lane-label" x="12" y="20">Management</text>
+  <text class="lane-label" x="12" y="150">Data / User Journey</text>
+  <text class="lane-label" x="12" y="468">Observability</text>
+
+  <!-- ═══════════════════════════════════════════ MANAGEMENT ARROWS ═══ -->
+  <path id="arr-argocd-gpuop" class="arrow arrow-mgmt" d="M185,68 L245,68" marker-end="url(#arr-green)"/>
+  <text x="215" y="62" font-family="IBM Plex Mono" font-size="8" fill="#3a5020" text-anchor="middle">deploys</text>
+  <path id="arr-gpuop-migmgr" class="arrow arrow-mgmt" d="M385,68 L445,68" marker-end="url(#arr-green)"/>
+  <text x="415" y="62" font-family="IBM Plex Mono" font-size="8" fill="#3a5020" text-anchor="middle">manages</text>
+  <path id="arr-gpuop-nfd" class="arrow" d="M385,82 Q415,100 445,100" marker-end="url(#arr-dim)" stroke-dasharray="3 2" opacity=".3"/>
+
+  <!-- ═══════════════════════════════════════════ MANAGEMENT NODES ═══ -->
+  <!-- ArgoCD -->
+  <g class="node" id="node-argocd" onclick="showDetail('argocd')">
+    <rect class="node-rect node-rect-mgmt" x="65" y="44" width="120" height="48" rx="6"/>
+    <text class="node-label" x="125" y="65">ArgoCD</text>
+    <text class="node-sub node-sub-accent" x="125" y="80">GitOps deploy</text>
+  </g>
+  <!-- GPU Operator -->
+  <g class="node" id="node-gpuop" onclick="showDetail('gpuop')">
+    <rect class="node-rect node-rect-mgmt" x="245" y="44" width="140" height="48" rx="6"/>
+    <text class="node-label" x="315" y="65">GPU Operator</text>
+    <text class="node-sub node-sub-accent" x="315" y="80">v24.9.2</text>
+  </g>
+  <!-- MIG Manager -->
+  <g class="node" id="node-migmgr" onclick="showDetail('migmgr')">
+    <rect class="node-rect node-rect-mgmt" x="445" y="44" width="130" height="48" rx="6"/>
+    <text class="node-label" x="510" y="65">MIG Manager</text>
+    <text class="node-sub node-sub-accent" x="510" y="80">DaemonSet</text>
+  </g>
+  <!-- NFD (small, dimmed) -->
+  <g class="node" id="node-nfd" onclick="showDetail('nfd')">
+    <rect class="node-rect" x="445" y="100" width="130" height="26" rx="5" fill="#131820" stroke="#333" stroke-width="1"/>
+    <text class="node-label" x="510" y="117" font-size="9" fill="#4a5568">Node Feature Discovery</text>
+  </g>
+
+  <!-- vertical lines: MIG Manager → GPU (dashed) -->
+  <line id="arr-migmgr-gpu" x1="510" y1="92" x2="510" y2="130" stroke="#76b900" stroke-width="1" stroke-dasharray="3 3" opacity=".3"/>
+
+  <!-- ═══════════════════════════════════════════ DATA PLANE ARROWS ═══ -->
+  <!-- Client → OCP Svc -->
+  <path id="arr-client-ocpsvc" class="arrow" d="M118,290 L180,290" marker-end="url(#arr-dim)"/>
+  <!-- Client → Turnstone (dashed optional) -->
+  <path id="arr-client-turn" class="arrow" d="M118,310 Q150,340 183,340" marker-end="url(#arr-dim)" stroke-dasharray="4 2" opacity=".25"/>
+  <!-- Turnstone → OCP Svc -->
+  <path id="arr-turn-ocpsvc" class="arrow" d="M293,340 Q320,340 340,310" marker-end="url(#arr-dim)" stroke-dasharray="4 2" opacity=".25"/>
+  <!-- OCP Svc → Triton pods (fan out) -->
+  <path id="arr-ocpsvc-t1" class="arrow" d="M430,276 Q510,230 548,220" marker-end="url(#arr-dim)"/>
+  <path id="arr-ocpsvc-t2" class="arrow" d="M430,282 Q510,268 548,268" marker-end="url(#arr-dim)"/>
+  <path id="arr-ocpsvc-t3" class="arrow" d="M430,296 Q510,306 548,316" marker-end="url(#arr-dim)"/>
+  <path id="arr-ocpsvc-t4" class="arrow" d="M430,302 Q510,342 548,362" marker-end="url(#arr-dim)"/>
+  <!-- Triton → MIG slices -->
+  <path id="arr-t1-mig1" class="arrow" d="M668,220 L718,213" marker-end="url(#arr-dim)"/>
+  <path id="arr-t2-mig2" class="arrow" d="M668,268 L718,250" marker-end="url(#arr-dim)"/>
+  <path id="arr-t3-mig3" class="arrow" d="M668,316 L718,305" marker-end="url(#arr-dim)"/>
+  <path id="arr-t4-mig4" class="arrow" d="M668,362 L718,370" marker-end="url(#arr-dim)"/>
+  <!-- Response path (dashed, back) -->
+  <path id="arr-resp" class="arrow" d="M718,440 Q400,440 120,310" stroke-dasharray="3 3" opacity=".15" marker-end="url(#arr-dim)"/>
+
+  <!-- ═══════════════════════════════════════════ DATA NODES ═══ -->
+  <!-- Client -->
+  <g class="node" id="node-client" onclick="showDetail('client')">
+    <rect class="node-rect node-rect-client" x="40" y="258" width="80" height="64" rx="6"/>
+    <text class="node-label" x="80" y="283">Client</text>
+    <text class="node-sub" x="80" y="297">audio stream</text>
+    <text class="node-sub" x="80" y="310">/ LLM prompt</text>
+  </g>
+  <!-- Turnstone (optional) -->
+  <g class="node" id="node-turnstone" onclick="showDetail('turnstone')">
+    <rect class="node-rect node-rect-turn" x="183" y="318" width="110" height="44" rx="6"/>
+    <text class="node-label" x="238" y="336" fill="#6888ff">Turnstone</text>
+    <text class="node-sub node-sub-blue" x="238" y="351">agent loop (opt.)</text>
+  </g>
+  <!-- OCP Service -->
+  <g class="node" id="node-ocpsvc" onclick="showDetail('ocpsvc')">
+    <rect class="node-rect node-rect-data" x="310" y="264" width="120" height="52" rx="6"/>
+    <text class="node-label" x="370" y="285">OCP Service</text>
+    <text class="node-sub" x="370" y="300">ClusterIP</text>
+    <text class="node-sub" x="370" y="312">gRPC :8001</text>
+  </g>
+  <!-- Triton pods -->
+  <g class="node" id="node-t1" onclick="showDetail('triton-audio')">
+    <rect class="node-rect node-rect-triton" x="548" y="198" width="120" height="44" rx="6"/>
+    <text class="node-label" x="608" y="217">Triton</text>
+    <text class="node-sub node-sub-orange" x="608" y="231">whisper #1</text>
+  </g>
+  <g class="node" id="node-t2" onclick="showDetail('triton-audio')">
+    <rect class="node-rect node-rect-triton" x="548" y="246" width="120" height="44" rx="6"/>
+    <text class="node-label" x="608" y="265">Triton</text>
+    <text class="node-sub node-sub-orange" x="608" y="279">whisper #2</text>
+  </g>
+  <g class="node" id="node-t3" onclick="showDetail('triton-llmsm')">
+    <rect class="node-rect node-rect-llm" x="548" y="294" width="120" height="44" rx="6"/>
+    <text class="node-label" x="608" y="313">Triton</text>
+    <text class="node-sub node-sub-blue" x="608" y="327">vLLM 8B</text>
+  </g>
+  <g class="node" id="node-t4" onclick="showDetail('triton-llmlg')">
+    <rect class="node-rect node-rect-llm" x="548" y="342" width="120" height="44" rx="6"/>
+    <text class="node-label" x="608" y="361">Triton</text>
+    <text class="node-sub node-sub-blue" x="608" y="375">vLLM 22B</text>
+  </g>
+
+  <!-- ═══════════════════════════════════════════ A100 GPU NODE ═══ -->
+  <g class="node" id="node-gpu" onclick="showDetail('gpu')">
+    <rect class="node-rect node-rect-gpu" x="718" y="155" width="200" height="280" rx="8"/>
+    <text class="node-label node-sub-accent" x="818" y="174" font-size="10">A100-80GB</text>
+    <text class="node-sub" x="818" y="187" font-size="8">MIG enabled · mixed strategy</text>
+
+    <!-- MIG slice bars (proportional: total 80GB) -->
+    <!-- 1g.10gb #1 — 10/80 = 12.5% → 22px wide out of 176 -->
+    <text class="mig-label" id="mig-lbl-1" x="730" y="213">1g.10gb</text>
+    <rect class="mig-bar-bg" x="730" y="202" width="176" height="18" rx="2"/>
+    <rect class="mig-bar mig-bar-1g" id="mig-bar-1" x="730" y="202" width="22" height="18" rx="2"/>
+    <text class="mig-label" x="756" y="213" dominant-baseline="middle">10 GB</text>
+
+    <!-- 1g.10gb #2 -->
+    <text class="mig-label" id="mig-lbl-2" x="730" y="233">1g.10gb</text>
+    <rect class="mig-bar-bg" x="730" y="222" width="176" height="18" rx="2"/>
+    <rect class="mig-bar mig-bar-1g" id="mig-bar-2" x="730" y="222" width="22" height="18" rx="2"/>
+    <text class="mig-label" x="756" y="233" dominant-baseline="middle">10 GB</text>
+
+    <!-- 2g.20gb — 20/80 = 25% → 44px -->
+    <text class="mig-label" id="mig-lbl-3" x="730" y="253">2g.20gb</text>
+    <rect class="mig-bar-bg" x="730" y="242" width="176" height="18" rx="2"/>
+    <rect class="mig-bar mig-bar-2g" id="mig-bar-3" x="730" y="242" width="44" height="18" rx="2"/>
+    <text class="mig-label" x="778" y="253" dominant-baseline="middle">20 GB</text>
+
+    <!-- 3g.40gb — 40/80 = 50% → 88px -->
+    <text class="mig-label" id="mig-lbl-4" x="730" y="273">3g.40gb</text>
+    <rect class="mig-bar-bg" x="730" y="262" width="176" height="22" rx="2"/>
+    <rect class="mig-bar mig-bar-3g" id="mig-bar-4" x="730" y="262" width="88" height="22" rx="2"/>
+    <text class="mig-label" x="822" y="275" dominant-baseline="middle">40 GB</text>
+
+    <!-- isolation label -->
+    <text x="818" y="300" font-family="IBM Plex Mono" font-size="8" fill="#2a4010" text-anchor="middle">hardware isolated</text>
+    <text x="818" y="312" font-family="IBM Plex Mono" font-size="8" fill="#2a4010" text-anchor="middle">dedicated SMs + bandwidth</text>
+
+    <!-- DCGM label inside GPU -->
+    <rect x="736" y="322" width="164" height="22" rx="3" fill="#1a1308" stroke="#3a2800" stroke-width="1"/>
+    <text x="818" y="337" font-family="IBM Plex Mono" font-size="8.5" fill="#6a4800" text-anchor="middle">DCGM Exporter (DaemonSet)</text>
+
+    <!-- usage bars (decorative) -->
+    <text x="730" y="360" font-family="IBM Plex Mono" font-size="8" fill="#2a3010">SM util:</text>
+    <rect x="730" y="362" width="80" height="5" rx="2" fill="#1a2008"/>
+    <rect id="sm-bar-1" x="730" y="362" width="28" height="5" rx="2" fill="#3a5c00" opacity=".7"/>
+    <rect x="730" y="372" width="80" height="5" rx="2" fill="#1a2008"/>
+    <rect id="sm-bar-2" x="730" y="372" width="20" height="5" rx="2" fill="#3a5c00" opacity=".7"/>
+    <rect x="730" y="382" width="80" height="5" rx="2" fill="#1a2008"/>
+    <rect id="sm-bar-3" x="730" y="382" width="40" height="5" rx="2" fill="#4a7200" opacity=".7"/>
+    <rect x="730" y="392" width="80" height="5" rx="2" fill="#1a2008"/>
+    <rect id="sm-bar-4" x="730" y="392" width="60" height="5" rx="2" fill="#5a8a00" opacity=".7"/>
+  </g>
+
+  <!-- ═══════════════════════════════════════════ OBS ARROWS ═══ -->
+  <!-- vertical: GPU DCGM → obs lane -->
+  <line id="arr-gpu-dcgm" x1="818" y1="435" x2="818" y2="462" stroke="#f0a500" stroke-width="1" stroke-dasharray="3 2" opacity=".25" class="arrow-vert" marker-end="url(#arr-orange)"/>
+  <path id="arr-dcgm-prom" class="arrow arrow-obs" d="M905,488 L960,488" marker-end="url(#arr-orange)"/>
+  <path id="arr-prom-graf" class="arrow arrow-obs" d="M1070,488 L1020,488" marker-end="url(#arr-orange)"/>
+
+  <!-- ═══════════════════════════════════════════ OBS NODES ═══ -->
+  <g class="node" id="node-dcgm" onclick="showDetail('dcgm')">
+    <rect class="node-rect node-rect-obs" x="800" y="465" width="105" height="44" rx="6"/>
+    <text class="node-label" x="852" y="483">DCGM</text>
+    <text class="node-sub node-sub-orange" x="852" y="497">Exporter</text>
+  </g>
+  <g class="node" id="node-prom" onclick="showDetail('prometheus')">
+    <rect class="node-rect node-rect-obs" x="960" y="465" width="110" height="44" rx="6"/>
+    <text class="node-label" x="1015" y="483">Prometheus</text>
+    <text class="node-sub node-sub-orange" x="1015" y="497">scrapes GPU metrics</text>
+  </g>
+  <!-- Grafana overlaps right side — add below right of Prometheus -->
+  <path id="arr-prom-graf2" class="arrow arrow-obs" d="M960,495 L905,495" marker-end="url(#arr-orange)"/>
+  <g class="node" id="node-graf" onclick="showDetail('grafana')">
+    <rect class="node-rect node-rect-alert" x="790" y="508" width="120" height="44" rx="6" stroke="#e05252"/>
+    <rect class="node-rect node-rect-obs" x="790" y="508" width="120" height="44" rx="6"/>
+    <text class="node-label" x="850" y="526">Grafana</text>
+    <text class="node-sub node-sub-orange" x="850" y="540">+ Alertmanager</text>
+  </g>
+
+  <!-- ═══════════════════════════════════════════ PACKET (animated) ═══ -->
+  <!-- paths used for motion animation — hidden guides -->
+  <path id="path-audio" d="M118,287 L310,287 L548,220 L718,213" fill="none" stroke="none"/>
+  <path id="path-audio2" d="M118,287 L310,287 L548,268 L718,250" fill="none" stroke="none"/>
+  <path id="path-llmsm" d="M118,287 L310,287 L548,316 L718,305" fill="none" stroke="none"/>
+  <path id="path-llmlg" d="M118,287 L310,287 L548,362 L718,370" fill="none" stroke="none"/>
+  <circle id="packet" class="packet" cx="0" cy="0" r="5"/>
+
+  <!-- legend -->
+  <g transform="translate(40,540)">
+    <rect x="0" y="0" width="10" height="10" rx="2" fill="#76b900" opacity=".6"/>
+    <text x="14" y="9" font-family="IBM Plex Sans" font-size="9" fill="#7a8499">Management</text>
+    <rect x="110" y="0" width="10" height="10" rx="2" fill="#6888ff" opacity=".5"/>
+    <text x="124" y="9" font-family="IBM Plex Sans" font-size="9" fill="#7a8499">Data / User Journey</text>
+    <rect x="250" y="0" width="10" height="10" rx="2" fill="#f0a500" opacity=".5"/>
+    <text x="264" y="9" font-family="IBM Plex Sans" font-size="9" fill="#7a8499">Observability</text>
+    <rect x="370" y="0" width="10" height="10" rx="2" fill="#6888ff" opacity=".3" stroke="#6888ff" stroke-width="1" stroke-dasharray="2 1"/>
+    <text x="384" y="9" font-family="IBM Plex Sans" font-size="9" fill="#7a8499">Optional / Turnstone</text>
+  </g>
+</svg>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#76b900;opacity:.7"></div>Management plane</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#6888ff;opacity:.6"></div>Data plane</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f0a500;opacity:.6"></div>Observability</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#e05252;opacity:.5"></div>Alerts</div>
+  <div class="legend-item" style="margin-left:auto;font-size:11px">Click any node to explore · Select workload to highlight path · Simulate to animate request flow</div>
+</div>
+
+<!-- detail panel overlay -->
+<div class="overlay" id="overlay" onclick="closeDetail()"></div>
+
+<!-- detail panel -->
+<div class="detail" id="detail-panel">
+  <div class="detail-hdr">
+    <div class="detail-icon" id="d-icon" style="background:#1e222d">⚙</div>
+    <div>
+      <div class="detail-title" id="d-title">Component</div>
+      <div class="detail-sub" id="d-sub">detail</div>
+    </div>
+    <button class="detail-close" onclick="closeDetail()">×</button>
+  </div>
+  <div class="detail-body" id="d-body"></div>
+</div>
+
+<script>
+/* ── state ── */
+let activeWorkload = 'audio';
+let telemetryOn = false;
+let simRunning = false;
+
+/* ── workload definitions ── */
+const WORKLOADS = {
+  audio: {
+    label: 'Audio (Whisper)',
+    slice: '1g.10gb',
+    vram: '10 GB',
+    model: 'whisper-large-v3',
+    statusText: 'workload: whisper · slice: 1g.10gb · vram: 10 GB · model: whisper-large-v3',
+    activeNodes: ['node-client','node-ocpsvc','node-t1','node-t2','node-gpu'],
+    dimNodes: ['node-t3','node-t4'],
+    activeArrows: ['arr-client-ocpsvc','arr-ocpsvc-t1','arr-ocpsvc-t2','arr-t1-mig1','arr-t2-mig2'],
+    dimArrows: ['arr-ocpsvc-t3','arr-ocpsvc-t4','arr-t3-mig3','arr-t4-mig4'],
+    activeMigBars: [1,2],
+    pathId: 'path-audio',
+    pathColor: '#76b900',
+    class: 'active-audio'
+  },
+  llmsm: {
+    label: 'LLM 8B',
+    slice: '2g.20gb',
+    vram: '20 GB',
+    model: 'meta-llama/Meta-Llama-3-8B-Instruct',
+    statusText: 'workload: llm-small · slice: 2g.20gb · vram: 20 GB · model: llama3-8b-instruct',
+    activeNodes: ['node-client','node-ocpsvc','node-t3','node-gpu'],
+    dimNodes: ['node-t1','node-t2','node-t4'],
+    activeArrows: ['arr-client-ocpsvc','arr-ocpsvc-t3','arr-t3-mig3'],
+    dimArrows: ['arr-ocpsvc-t1','arr-ocpsvc-t2','arr-ocpsvc-t4','arr-t1-mig1','arr-t2-mig2','arr-t4-mig4'],
+    activeMigBars: [3],
+    pathId: 'path-llmsm',
+    pathColor: '#6888ff',
+    class: 'active-llmsm'
+  },
+  llmlg: {
+    label: 'LLM 22B',
+    slice: '3g.40gb',
+    vram: '40 GB',
+    model: 'mistralai/Mistral-Small-3.1-22B',
+    statusText: 'workload: llm-large · slice: 3g.40gb · vram: 40 GB · model: mistral-22b',
+    activeNodes: ['node-client','node-turnstone','node-ocpsvc','node-t4','node-gpu'],
+    dimNodes: ['node-t1','node-t2','node-t3'],
+    activeArrows: ['arr-client-ocpsvc','arr-client-turn','arr-turn-ocpsvc','arr-ocpsvc-t4','arr-t4-mig4'],
+    dimArrows: ['arr-ocpsvc-t1','arr-ocpsvc-t2','arr-ocpsvc-t3','arr-t1-mig1','arr-t2-mig2','arr-t3-mig3'],
+    activeMigBars: [4],
+    pathId: 'path-llmlg',
+    pathColor: '#6888ff',
+    class: 'active-llmlg'
+  }
+};
+
+/* ── workload selector ── */
+function selectWorkload(wl) {
+  activeWorkload = wl;
+  const wlData = WORKLOADS[wl];
+  // update buttons
+  ['audio','llmsm','llmlg'].forEach(w => {
+    const btn = document.getElementById('wl-'+w);
+    btn.className = 'wl-btn' + (w===wl ? ' '+WORKLOADS[w].class : '');
+  });
+  document.getElementById('status-bar').textContent = wlData.statusText;
+  applyHighlight(wlData);
+}
+
+function applyHighlight(wlData) {
+  const svg = document.getElementById('diagram');
+  // reset all nodes
+  svg.querySelectorAll('.node').forEach(n => {
+    n.classList.remove('dimmed','active-node');
+  });
+  // reset all arrows
+  svg.querySelectorAll('.arrow').forEach(a => {
+    a.classList.remove('dimmed','active-path','active-path-audio','active-path-llm');
+  });
+  // reset mig bars
+  for(let i=1;i<=4;i++){
+    const b = document.getElementById('mig-bar-'+i);
+    if(b) b.classList.remove('active-slice');
+    const l = document.getElementById('mig-lbl-'+i);
+    if(l) l.classList.remove('mig-label-active');
+  }
+  // apply active
+  wlData.activeNodes.forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.classList.add('active-node');
+  });
+  wlData.dimNodes.forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.classList.add('dimmed');
+  });
+  wlData.activeArrows.forEach(id => {
+    const el = document.getElementById(id);
+    if(el){
+      el.classList.add('active-path');
+      el.classList.add(activeWorkload==='audio'?'active-path-audio':'active-path-llm');
+    }
+  });
+  wlData.dimArrows.forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.classList.add('dimmed');
+  });
+  wlData.activeMigBars.forEach(i => {
+    const b = document.getElementById('mig-bar-'+i);
+    if(b) b.classList.add('active-slice');
+    const l = document.getElementById('mig-lbl-'+i);
+    if(l) l.classList.add('mig-label-active');
+  });
+}
+
+/* ── simulation ── */
+function simulate() {
+  if(simRunning) return;
+  simRunning = true;
+  const btn = document.getElementById('sim-btn');
+  btn.disabled = true;
+  btn.textContent = '⟳ Running…';
+
+  const wlData = WORKLOADS[activeWorkload];
+  const pathEl = document.getElementById(wlData.pathId);
+  const packet = document.getElementById('packet');
+  const totalLen = pathEl.getTotalLength ? pathEl.getTotalLength() : 400;
+
+  packet.className = 'packet' + (activeWorkload==='audio' ? '' : ' packet-llm');
+  packet.style.opacity = '1';
+
+  let startTime = null;
+  const duration = 1600;
+
+  function step(ts) {
+    if(!startTime) startTime = ts;
+    const progress = Math.min((ts - startTime) / duration, 1);
+    // ease in-out
+    const ease = progress < 0.5 ? 2*progress*progress : -1+(4-2*progress)*progress;
+    const point = pathEl.getPointAtLength(ease * totalLen);
+    packet.setAttribute('cx', point.x);
+    packet.setAttribute('cy', point.y);
+    if(progress < 1){
+      requestAnimationFrame(step);
+    } else {
+      // pulse on GPU, then return
+      packet.style.opacity = '0.6';
+      setTimeout(() => {
+        packet.style.opacity = '0';
+        btn.disabled = false;
+        btn.textContent = '▶ Simulate Request';
+        simRunning = false;
+      }, 600);
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+/* ── telemetry toggle ── */
+function toggleTelemetry() {
+  telemetryOn = !telemetryOn;
+  const btn = document.getElementById('tel-btn');
+  btn.className = 'tel-btn' + (telemetryOn ? ' on' : '');
+  btn.textContent = telemetryOn ? '◉ Telemetry' : 'Telemetry';
+  const svg = document.getElementById('diagram');
+  const telNodes = ['node-dcgm','node-prom','node-graf'];
+  const telArrows = ['arr-gpu-dcgm','arr-dcgm-prom','arr-prom-graf','arr-prom-graf2'];
+  telNodes.forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.classList.toggle('tel-active', telemetryOn);
+  });
+  telArrows.forEach(id => {
+    const el = document.getElementById(id);
+    if(el){
+      el.classList.toggle('tel-active', telemetryOn);
+      if(telemetryOn) el.classList.remove('dimmed');
+    }
+  });
+}
+
+/* ── detail panel content ── */
+const DETAILS = {
+  argocd: {
+    icon: '🔄', iconBg: '#0f1a08', title: 'ArgoCD', sub: 'Deploys GPU Operator from Helm chart',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">Role</div>
+  <p><strong>ArgoCD</strong> manages the GPU Operator lifecycle via GitOps. The Application manifest below syncs the Helm chart from NVIDIA's NGC registry to the <code>gpu-operator</code> namespace, with automated pruning and self-healing.</p>
+  <p>This replaces OperatorHub — version is pinned, values are in Git, rollbacks are a <code>git revert</code>.</p>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">ArgoCD Application Manifest</div>
+  <pre class="detail-code"><span class="k">apiVersion</span>: <span class="v">argoproj.io/v1alpha1</span>
+<span class="k">kind</span>: <span class="v">Application</span>
+<span class="k">metadata</span>:
+  <span class="k">name</span>: <span class="v">gpu-operator</span>
+  <span class="k">namespace</span>: <span class="v">argocd</span>
+<span class="k">spec</span>:
+  <span class="k">source</span>:
+    <span class="k">repoURL</span>: <span class="s">https://helm.ngc.nvidia.com/nvidia</span>
+    <span class="k">chart</span>: <span class="v">gpu-operator</span>
+    <span class="k">targetRevision</span>: <span class="v">v24.9.2</span>
+    <span class="k">helm</span>:
+      <span class="k">releaseName</span>: <span class="v">gpu-operator</span>
+      <span class="k">values</span>: |
+        <span class="k">mig</span>:
+          <span class="k">strategy</span>: <span class="v">mixed</span>
+        <span class="k">nfd</span>:
+          <span class="k">enabled</span>: <span class="n">false</span>
+        <span class="k">operator</span>:
+          <span class="k">defaultRuntime</span>: <span class="v">crio</span>
+  <span class="k">destination</span>:
+    <span class="k">server</span>: <span class="s">https://kubernetes.default.svc</span>
+    <span class="k">namespace</span>: <span class="v">gpu-operator</span>
+  <span class="k">syncPolicy</span>:
+    <span class="k">automated</span>:
+      <span class="k">prune</span>: <span class="n">true</span>
+      <span class="k">selfHeal</span>: <span class="n">true</span>
+    <span class="k">syncOptions</span>:
+      - <span class="v">CreateNamespace=true</span></pre>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">OCP note</div>
+  <p>Avoid OperatorHub for this — it locks you into OLM update cadence and makes Helm values harder to override. ArgoCD gives full control over rollouts.</p>
+</div>`
+  },
+  gpuop: {
+    icon: '⚙', iconBg: '#0f1a08', title: 'GPU Operator', sub: 'v24.9.2 · Helm · NVIDIA NGC',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">Components deployed</div>
+  <ul>
+    <li><strong>Device Plugin</strong> — advertises <code>nvidia.com/mig-*</code> resources to the K8s scheduler</li>
+    <li><strong>MIG Manager</strong> — watches node labels, applies MigConfig ConfigMap, repartitions the GPU</li>
+    <li><strong>DCGM Exporter</strong> — scrapes per-MIG-slice GPU metrics for Prometheus</li>
+    <li><strong>Container Toolkit</strong> — configures CRI-O to inject NVIDIA runtime hooks</li>
+    <li><strong>GFD (GPU Feature Discovery)</strong> — labels nodes with GPU capabilities</li>
+  </ul>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Key Helm flags for OCP</div>
+  <pre class="detail-code"><span class="k">operator.defaultRuntime</span>: <span class="v">crio</span>     <span class="c"># OCP uses CRI-O, not containerd</span>
+<span class="k">nfd.enabled</span>: <span class="n">false</span>                 <span class="c"># OCP already has NFD</span>
+<span class="k">mig.strategy</span>: <span class="v">mixed</span>              <span class="c"># advertise multiple slice sizes</span></pre>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">OCP SCC binding (required)</div>
+  <pre class="detail-code"><span class="c"># Run once per namespace that will schedule GPU pods</span>
+oc adm policy add-scc-to-user \
+  nvidia-scc -z default \
+  -n &lt;your-workload-namespace&gt;</pre>
+</div>`
+  },
+  migmgr: {
+    icon: '🔀', iconBg: '#0f1a08', title: 'MIG Manager', sub: 'Watches node label · applies MigConfig',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">How it works</div>
+  <p>MIG Manager is a DaemonSet on GPU nodes. It watches for the node label <code>nvidia.com/mig.config=&lt;profile&gt;</code> and applies the matching entry from the <code>default-mig-parted-config</code> ConfigMap. On change it drains workloads, repartitions the GPU, and brings slices back online.</p>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">MigConfig ConfigMap</div>
+  <pre class="detail-code"><span class="k">apiVersion</span>: <span class="v">v1</span>
+<span class="k">kind</span>: <span class="v">ConfigMap</span>
+<span class="k">metadata</span>:
+  <span class="k">name</span>: <span class="v">default-mig-parted-config</span>
+  <span class="k">namespace</span>: <span class="v">gpu-operator</span>
+<span class="k">data</span>:
+  <span class="k">config.yaml</span>: |
+    <span class="k">version</span>: <span class="v">v1</span>
+    <span class="k">mig-configs</span>:
+      <span class="k">audio-and-llm</span>:
+        - <span class="k">devices</span>: <span class="v">all</span>
+          <span class="k">mig-enabled</span>: <span class="n">true</span>
+          <span class="k">mig-devices</span>:
+            <span class="s">"1g.10gb"</span>: <span class="n">2</span>  <span class="c"># Whisper / audio</span>
+            <span class="s">"2g.20gb"</span>: <span class="n">1</span>  <span class="c"># 7B-13B LLM</span>
+            <span class="s">"3g.40gb"</span>: <span class="n">1</span>  <span class="c"># 30B-40B LLM</span></pre>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Activate profile</div>
+  <pre class="detail-code"><span class="c"># Label the bare-metal GPU node to trigger repartition</span>
+oc label node &lt;gpu-node&gt; \
+  nvidia.com/mig.config=audio-and-llm</pre>
+</div>`
+  },
+  nfd: {
+    icon: '🔍', iconBg: '#131820', title: 'Node Feature Discovery', sub: 'Labels GPU nodes automatically',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">Role</div>
+  <p>NFD detects hardware capabilities and labels nodes. GPU Operator uses its labels to identify GPU nodes and target DaemonSet pods. On OCP, NFD is already installed — <code>nfd.enabled=false</code> in the Helm chart prevents a duplicate instance.</p>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Relevant labels set by NFD</div>
+  <pre class="detail-code">feature.node.kubernetes.io/pci-10de.present: "true"
+nvidia.com/gpu.present: "true"
+nvidia.com/gpu.product: A100-SXM4-80GB
+nvidia.com/mig.capable: "true"</pre>
+</div>`
+  },
+  client: {
+    icon: '💻', iconBg: '#141921', title: 'Client Application', sub: 'Audio stream · LLM prompt',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">Request types</div>
+  <ul>
+    <li><strong>Audio workload</strong> — live audio stream sent for transcription (Whisper). gRPC streaming call to Triton's <code>whisper-large-v3</code> model endpoint.</li>
+    <li><strong>LLM workload</strong> — prompt sent for inference. OpenAI-compatible <code>/v1/chat/completions</code> via Triton's vLLM backend, or routed through Turnstone for agent loops.</li>
+  </ul>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Protocol</div>
+  <pre class="detail-code"><span class="c"># Triton gRPC (audio, LLM via KFServing v2 protocol)</span>
+grpc://triton-svc.namespace.svc:8001
+
+<span class="c"># Triton HTTP (OpenAI-compat via vLLM backend)</span>
+http://triton-svc.namespace.svc:8000/v1/chat/completions
+
+<span class="c"># Via Turnstone (agent loop, routes internally)</span>
+http://turnstone.namespace.svc:8080/v1/agents</pre>
+</div>`
+  },
+  ocpsvc: {
+    icon: '⚡', iconBg: '#141921', title: 'OCP Service (ClusterIP)', sub: 'Routes to Triton pod by MIG resource type',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">How routing works</div>
+  <p>Each Triton pod requests a <strong>typed MIG resource</strong> (<code>nvidia.com/mig-1g.10gb</code>, <code>nvidia.com/mig-2g.20gb</code>, etc.). The K8s scheduler places each pod on the GPU node only if that exact slice type is available. Each pod gets exactly one slice — the device plugin injects the MIG UUID into <code>NVIDIA_VISIBLE_DEVICES</code>.</p>
+  <p>Clients select the right Triton pod via separate ClusterIP Services — one per workload type — or via an Ingress with path routing.</p>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Example Service</div>
+  <pre class="detail-code"><span class="k">apiVersion</span>: <span class="v">v1</span>
+<span class="k">kind</span>: <span class="v">Service</span>
+<span class="k">metadata</span>:
+  <span class="k">name</span>: <span class="v">triton-audio</span>
+<span class="k">spec</span>:
+  <span class="k">selector</span>:
+    <span class="k">app</span>: <span class="v">triton-whisper</span>
+  <span class="k">ports</span>:
+    - <span class="k">name</span>: <span class="v">grpc</span>
+      <span class="k">port</span>: <span class="n">8001</span>
+      <span class="k">targetPort</span>: <span class="n">8001</span>
+    - <span class="k">name</span>: <span class="v">http</span>
+      <span class="k">port</span>: <span class="n">8000</span>
+      <span class="k">targetPort</span>: <span class="n">8000</span></pre>
+</div>`
+  },
+  turnstone: {
+    icon: '🤖', iconBg: '#14182a', title: 'Turnstone', sub: 'Self-hosted agent orchestration · optional',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">What it is</div>
+  <p><a class="ext-link" href="https://github.com/turnstonelabs/turnstone" target="_blank">turnstonelabs/turnstone</a> — Apache 2.0, Python 3.13+. Self-hosted, local-first agent orchestration. Sits above Triton/vLLM, drives the LLM agent loop, dispatches tool calls, manages multi-turn workstreams across your cluster. No telemetry, no SaaS dependency.</p>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Where it fits</div>
+  <span class="tag tag-green">Serving: Triton + vLLM</span>
+  <span class="tag tag-blue">Orchestration: Turnstone</span>
+  <span class="tag tag-orange">Tools: MCP servers</span>
+  <p style="margin-top:8px">Turnstone calls your Triton gRPC/HTTP endpoint — the same OpenAI-compatible API. Point it at the ClusterIP service. Heavy reasoning steps route to the 3g.40gb pod; tool-call generation routes to the 2g.20gb pod.</p>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Routing config (conceptual)</div>
+  <pre class="detail-code"><span class="k">models</span>:
+  - <span class="k">name</span>: <span class="v">llm-large</span>        <span class="c"># reasoning, planning</span>
+    <span class="k">api_base</span>: <span class="s">http://triton-llm-large.svc:8000/v1</span>
+    <span class="k">model</span>: <span class="v">mistral-22b</span>
+  - <span class="k">name</span>: <span class="v">llm-small</span>         <span class="c"># tool call generation</span>
+    <span class="k">api_base</span>: <span class="s">http://triton-llm-small.svc:8000/v1</span>
+    <span class="k">model</span>: <span class="v">llama3-8b</span></pre>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Key features</div>
+  <ul>
+    <li>MCP tool servers — kubectl, custom APIs, S3, databases</li>
+    <li>LLM risk judge — evaluates each tool call before execution</li>
+    <li>Browser UI + CLI, cluster dashboard, Discord/Slack gateway</li>
+    <li>Optional RBAC, SSO, audit logs</li>
+  </ul>
+</div>`
+  },
+  'triton-audio': {
+    icon: '🎙', iconBg: '#1e1a10', title: 'Triton — Whisper Backend', sub: '1g.10gb slice · 10 GB VRAM',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">Resource request</div>
+  <pre class="detail-code"><span class="k">resources</span>:
+  <span class="k">limits</span>:
+    <span class="s">nvidia.com/mig-1g.10gb</span>: <span class="n">"1"</span>
+<span class="c"># Device plugin injects CUDA_VISIBLE_DEVICES=MIG-GPU-&lt;uuid&gt;
+# Triton sees only this slice — hardware isolated</span></pre>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Model repository</div>
+  <pre class="detail-code">model-repo-audio/
+  whisper-large-v3/
+    config.pbtxt      <span class="c"># backend: "python"</span>
+    1/
+      model.py        <span class="c"># faster-whisper Python backend</span></pre>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Config</div>
+  <pre class="detail-code"><span class="c"># config.pbtxt (excerpt)</span>
+<span class="k">backend</span>: <span class="s">"python"</span>
+<span class="k">max_batch_size</span>: <span class="n">8</span>
+<span class="k">input</span> [{ <span class="k">name</span>: <span class="s">"audio_bytes"</span> <span class="k">data_type</span>: <span class="v">TYPE_BYTES</span> }]
+<span class="k">output</span> [{ <span class="k">name</span>: <span class="s">"transcript"</span> <span class="k">data_type</span>: <span class="v">TYPE_STRING</span> }]</pre>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Two pods running</div>
+  <p>Both <code>whisper #1</code> and <code>whisper #2</code> run identical configs on separate <code>1g.10gb</code> slices. Load is split across them by the ClusterIP service — provides redundancy and doubles concurrent audio stream capacity.</p>
+</div>`
+  },
+  'triton-llmsm': {
+    icon: '🧠', iconBg: '#14182a', title: 'Triton — vLLM 8B Backend', sub: '2g.20gb slice · 20 GB VRAM',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">Resource request</div>
+  <pre class="detail-code"><span class="k">resources</span>:
+  <span class="k">limits</span>:
+    <span class="s">nvidia.com/mig-2g.20gb</span>: <span class="n">"1"</span></pre>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Model repository</div>
+  <pre class="detail-code">model-repo-llm-small/
+  llama3-8b/
+    config.pbtxt      <span class="c"># backend: "vllm"</span>
+    1/
+      model.json</pre>
+  <pre class="detail-code"><span class="c"># model.json</span>
+{
+  <span class="k">"model"</span>: <span class="s">"meta-llama/Meta-Llama-3-8B-Instruct"</span>,
+  <span class="k">"gpu_memory_utilization"</span>: <span class="n">0.85</span>,
+  <span class="k">"tensor_parallel_size"</span>: <span class="n">1</span>
+}</pre>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Custom model</div>
+  <pre class="detail-code"><span class="c"># Point at PVC-mounted weights instead of HF:</span>
+{ <span class="k">"model"</span>: <span class="s">"/models/my-fine-tuned-7b"</span> }</pre>
+</div>`
+  },
+  'triton-llmlg': {
+    icon: '🧠', iconBg: '#14182a', title: 'Triton — vLLM 22B Backend', sub: '3g.40gb slice · 40 GB VRAM',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">Resource request</div>
+  <pre class="detail-code"><span class="k">resources</span>:
+  <span class="k">limits</span>:
+    <span class="s">nvidia.com/mig-3g.40gb</span>: <span class="n">"1"</span></pre>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Model repository</div>
+  <pre class="detail-code">model-repo-llm-large/
+  mistral-22b/
+    config.pbtxt      <span class="c"># backend: "vllm"</span>
+    1/
+      model.json</pre>
+  <pre class="detail-code"><span class="c"># model.json</span>
+{
+  <span class="k">"model"</span>: <span class="s">"mistralai/Mistral-Small-3.1-22B-Instruct-2503"</span>,
+  <span class="k">"gpu_memory_utilization"</span>: <span class="n">0.90</span>,
+  <span class="k">"tensor_parallel_size"</span>: <span class="n">1</span>
+}</pre>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Typical use</div>
+  <p>Complex reasoning, RAG synthesis, multi-step agent tasks routed through Turnstone. The 40 GB slice fits most 22B-param models at BF16 with room for KV cache.</p>
+</div>`
+  },
+  gpu: {
+    icon: '🖥', iconBg: '#111a0a', title: 'NVIDIA A100-80GB', sub: 'MIG enabled · mixed strategy · 4 slices',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">MIG partition layout</div>
+  <div class="mig-detail-bar">
+    <div class="mig-detail-swatch" style="background:#3a5c00"></div>
+    <div class="mig-detail-info"><span class="mig-detail-name">1g.10gb ×2</span> <span class="mig-detail-desc">— 10 GB VRAM each, 1/7 SM fraction, 2 audio Triton pods</span></div>
+  </div>
+  <div class="mig-detail-bar">
+    <div class="mig-detail-swatch" style="background:#4a7200"></div>
+    <div class="mig-detail-info"><span class="mig-detail-name">2g.20gb ×1</span> <span class="mig-detail-desc">— 20 GB VRAM, 2/7 SM fraction, LLM 8B pod</span></div>
+  </div>
+  <div class="mig-detail-bar">
+    <div class="mig-detail-swatch" style="background:#76b900"></div>
+    <div class="mig-detail-info"><span class="mig-detail-name">3g.40gb ×1</span> <span class="mig-detail-desc">— 40 GB VRAM, 3/7 SM fraction, LLM 22B pod</span></div>
+  </div>
+  <p style="margin-top:8px">Total: 80 GB allocated (10+10+20+40). No headroom — all slices in use.</p>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Isolation guarantees</div>
+  <ul>
+    <li><strong>Dedicated SMs</strong> — each slice has its own Streaming Multiprocessors; no cross-tenant SM sharing</li>
+    <li><strong>Dedicated memory bandwidth</strong> — HBM2e partitioned; no bandwidth contention between slices</li>
+    <li><strong>Fault domain</strong> — a crash in one slice does not affect others</li>
+    <li><strong>Error containment</strong> — ECC errors isolated to the slice</li>
+  </ul>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Verify</div>
+  <pre class="detail-code"><span class="c"># On the bare-metal node after MIG Manager runs:</span>
+nvidia-smi -L
+<span class="c"># GPU 0: A100-SXM4-80GB (...)
+#   MIG 1g.10gb Device 0: ...
+#   MIG 1g.10gb Device 1: ...
+#   MIG 2g.20gb Device 2: ...
+#   MIG 3g.40gb Device 3: ...</span>
+
+oc describe node &lt;gpu-node&gt; | grep nvidia
+<span class="c"># nvidia.com/mig-1g.10gb: 2
+# nvidia.com/mig-2g.20gb: 1
+# nvidia.com/mig-3g.40gb: 1</span></pre>
+</div>`
+  },
+  dcgm: {
+    icon: '📊', iconBg: '#1a1510', title: 'DCGM Exporter', sub: 'Per-MIG-slice metrics → Prometheus',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">Deployed by</div>
+  <p>GPU Operator deploys DCGM Exporter as a DaemonSet on all GPU nodes. It is MIG-aware — metrics are labeled with the MIG slice UUID so Prometheus can group by workload.</p>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Key metrics</div>
+  <div class="metric-row"><span class="metric-name">DCGM_FI_DEV_MEM_USED</span><span class="metric-desc">VRAM used per slice (bytes)</span></div>
+  <div class="metric-row"><span class="metric-name">DCGM_FI_PROF_GR_ENGINE_ACTIVE</span><span class="metric-desc">SM utilization (0–1)</span></div>
+  <div class="metric-row"><span class="metric-name">DCGM_FI_DEV_GPU_TEMP</span><span class="metric-desc">GPU temperature (°C)</span></div>
+  <div class="metric-row"><span class="metric-name">DCGM_FI_DEV_POWER_USAGE</span><span class="metric-desc">Power draw (W)</span></div>
+  <div class="metric-row"><span class="metric-name">DCGM_FI_PROF_PIPE_TENSOR_ACTIVE</span><span class="metric-desc">Tensor core utilization</span></div>
+  <div class="metric-row"><span class="metric-name">DCGM_FI_PROF_DRAM_ACTIVE</span><span class="metric-desc">HBM bandwidth utilization</span></div>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">MIG label example</div>
+  <pre class="detail-code"><span class="c"># Prometheus label set for a 1g.10gb slice:</span>
+gpu="0" gpu_i_id="3" gpu_i_profile="1g.10gb"
+exported_pod="triton-whisper-..." exported_namespace="inference"</pre>
+</div>`
+  },
+  prometheus: {
+    icon: '🔥', iconBg: '#1a1510', title: 'Prometheus', sub: 'Scrapes DCGM · stores GPU metrics',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">Scrape config</div>
+  <pre class="detail-code"><span class="c"># prometheus.yml or ServiceMonitor CR</span>
+<span class="k">scrape_configs</span>:
+  - <span class="k">job_name</span>: <span class="s">dcgm-exporter</span>
+    <span class="k">kubernetes_sd_configs</span>:
+      - <span class="k">role</span>: <span class="v">endpoints</span>
+    <span class="k">relabel_configs</span>:
+      - <span class="k">source_labels</span>: [__meta_kubernetes_service_label_app]
+        <span class="k">regex</span>: <span class="v">dcgm-exporter</span>
+        <span class="k">action</span>: <span class="v">keep</span></pre>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Alert rule — SM saturation</div>
+  <pre class="detail-code"><span class="k">alert</span>: <span class="v">GPUSliceHighUtilization</span>
+<span class="k">expr</span>: >
+  DCGM_FI_PROF_GR_ENGINE_ACTIVE
+    {gpu_i_profile!=""} > 0.80
+<span class="k">for</span>: <span class="v">5m</span>
+<span class="k">labels</span>:
+  <span class="k">severity</span>: <span class="v">warning</span>
+<span class="k">annotations</span>:
+  <span class="k">summary</span>: <span class="s">"MIG slice {{$labels.gpu_i_profile}} >80% SM util"</span>
+  <span class="k">description</span>: <span class="s">"Slice on {{$labels.exported_node}} saturated. Consider adding capacity or rebalancing workloads."</span></pre>
+</div>`
+  },
+  grafana: {
+    icon: '📈', iconBg: '#1a1510', title: 'Grafana + Alertmanager', sub: 'GPU observability dashboard',
+    body: `
+<div class="detail-section">
+  <div class="detail-section-title">Recommended panels</div>
+  <ul>
+    <li><strong>MIG slice VRAM used</strong> — stacked bar per slice (<code>DCGM_FI_DEV_MEM_USED</code>), threshold line at 90%</li>
+    <li><strong>SM utilization per slice</strong> — time series, one line per <code>gpu_i_profile</code></li>
+    <li><strong>GPU temperature</strong> — gauge, alert at 85°C</li>
+    <li><strong>Triton request throughput</strong> — if Triton metrics enabled, <code>nv_inference_request_success</code></li>
+    <li><strong>Power draw</strong> — line graph, useful for capacity planning (A100 SXM4: 400W TDP)</li>
+  </ul>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Dashboard import</div>
+  <p>NVIDIA provides a pre-built DCGM Grafana dashboard (ID <strong>12239</strong> on grafana.com). Import it and filter by <code>gpu_i_profile</code> to get per-MIG-slice views.</p>
+</div>
+<div class="detail-section">
+  <div class="detail-section-title">Alertmanager routing</div>
+  <p>Wire <code>GPUSliceHighUtilization</code> alerts to your oncall channel (Slack, PagerDuty). With one A100 per DC, any sustained saturation of the 3g.40gb slice means the largest LLM workload is starved — alert before it impacts SLA.</p>
+</div>`
+  }
+};
+
+function showDetail(id) {
+  const d = DETAILS[id];
+  if(!d) return;
+  document.getElementById('d-icon').textContent = d.icon;
+  document.getElementById('d-icon').style.background = d.iconBg;
+  document.getElementById('d-title').textContent = d.title;
+  document.getElementById('d-sub').textContent = d.sub;
+  document.getElementById('d-body').innerHTML = d.body;
+  document.getElementById('detail-panel').classList.add('open');
+  document.getElementById('overlay').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('open');
+  document.getElementById('overlay').classList.remove('open');
+}
+
+/* ── init ── */
+selectWorkload('audio');
+</script>
+</body>
+</html>
