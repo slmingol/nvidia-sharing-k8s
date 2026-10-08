@@ -445,22 +445,27 @@ a.el:hover{text-decoration:underline}
 <circle id="alert-dot" cx="1155" cy="516" r="6" fill="#e05252" opacity="0"/>
 <text id="alert-txt" x="1155" y="508" font-family="IBM Plex Mono" font-size="7" fill="#e05252" text-anchor="middle" opacity="0">ALERT</text>
 
-<!-- ══ MOTION PATHS (invisible) — follow exact arrow geometry ══ -->
-<!-- Each path: client dot → OCP left edge (270,260) → OCP right exit → exact arrow curve → Triton right edge → MIG entry -->
-<!-- audio → pod1 (ar-s1: M450,252 Q530,210 568,205; ar-t1-m: M688,205 L738,208) -->
-<path id="mp-a1" d="M155,208 Q213,235 270,260 L450,252 Q530,210 568,205 L688,205 L738,208" fill="none" stroke="none"/>
-<path id="mp-a2" d="M155,236 Q213,248 270,260 L450,258 Q530,258 568,258 L688,258 L738,245" fill="none" stroke="none"/>
-<path id="mp-a3" d="M155,264 Q213,262 270,260 L450,252 Q530,210 568,205 L688,205 L738,208" fill="none" stroke="none"/>
-<!-- llm-sm → pod3 (ar-s3: M450,268 Q530,306 568,310; ar-t3-m: M688,310 L738,302) -->
-<path id="mp-s1" d="M155,292 Q213,276 270,260 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
-<path id="mp-s2" d="M155,320 Q213,291 270,260 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
-<!-- llm-lg → Turnstone → OCP → pod4 -->
-<path id="mp-l1" d="M155,348 Q210,353 265,360 L375,356 Q400,320 400,280 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
-<path id="mp-l2" d="M155,376 Q210,367 265,360 L375,356 Q400,320 400,280 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
-<!-- batch → Turnstone → OCP → pod3 or pod4 -->
-<path id="mp-b1" d="M155,404 Q185,388 265,360 L375,356 Q400,320 400,280 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
-<path id="mp-b2" d="M155,432 Q185,402 265,360 L375,356 Q400,320 400,280 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
-<path id="mp-b3" d="M155,460 Q185,416 265,360 L375,356 Q400,320 400,280 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
+<!-- ══ MOTION PATHS (invisible) ══
+     All paths start ON a visible arrow so no ball appears in empty space.
+     Client dot glow identifies which client fired; packet travels the arrow route.
+     Direct (audio/llm-sm): start near ar-c-s (M155,300 L270,265) → OCP → pod
+     Via Turnstone (llm-lg/batch): start near ar-c-t (M155,320 Q200,360 265,360) → Turnstone → OCP → pod -->
+<!-- audio → pod1 (whisper #1) -->
+<path id="mp-a1" d="M155,297 L270,265 L450,252 Q530,210 568,205 L688,205 L738,208" fill="none" stroke="none"/>
+<!-- audio → pod2 (whisper #2) -->
+<path id="mp-a2" d="M155,300 L270,265 L450,258 Q530,258 568,258 L688,258 L738,245" fill="none" stroke="none"/>
+<!-- audio → pod1 -->
+<path id="mp-a3" d="M155,303 L270,265 L450,252 Q530,210 568,205 L688,205 L738,208" fill="none" stroke="none"/>
+<!-- llm-sm → pod3 (2g.20gb) -->
+<path id="mp-s1" d="M155,302 L270,265 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
+<path id="mp-s2" d="M155,306 L270,265 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
+<!-- llm-lg → Turnstone → OCP → pod4 (3g.40gb) -->
+<path id="mp-l1" d="M155,320 Q200,360 265,360 L375,356 Q400,320 400,280 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
+<path id="mp-l2" d="M155,323 Q200,361 265,360 L375,356 Q400,320 400,280 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
+<!-- batch → Turnstone → OCP → pod4 or pod3 -->
+<path id="mp-b1" d="M155,317 Q200,359 265,360 L375,356 Q400,320 400,280 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
+<path id="mp-b2" d="M155,326 Q200,362 265,360 L375,356 Q400,320 400,280 L450,268 Q530,306 568,310 L688,310 L738,302" fill="none" stroke="none"/>
+<path id="mp-b3" d="M155,313 Q200,357 265,360 L375,356 Q400,320 400,280 L450,275 Q530,355 568,360 L688,360 L738,368" fill="none" stroke="none"/>
 
 <!-- ══ PACKETS (10 + 2 spare) ══ -->
 <circle class="pk pk-p1" id="pk0" cx="0" cy="0" r="5"/>
