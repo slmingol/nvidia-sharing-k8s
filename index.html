@@ -761,6 +761,7 @@
       <li><a href="#vram-isolation">VRAM Isolation Landscape</a></li>
       <li><a href="#triton">Triton vs. vLLM</a></li>
       <li><a href="#turnstone">Agent Orchestration</a></li>
+      <li><a href="#simulation">Live Simulation</a></li>
       <li><a href="#stack">6 — Recommended Stack</a></li>
       <li><a href="#vms">7 — VMs: Boon or Bust?</a>
         <ul class="toc-list toc-sub">
@@ -2110,6 +2111,77 @@ CUDA_MPS_PINNED_DEVICE_MEM_LIMIT="0=4096m" python inference.py</pre>
         <strong>Turnstone is orchestration, not isolation</strong>
         Routing different agent steps to different Triton pods is a scheduling choice, not a security boundary. VRAM isolation is still provided by MIG at the hardware layer — Turnstone sits above all of that and has no visibility into GPU resource allocation.
       </div>
+    </section>
+
+    <!-- SIMULATION -->
+    <section class="section" id="simulation">
+      <h2><span class="sec-num">—</span> Live Simulation: What the Diagram Shows</h2>
+      <p>
+        The <a href="flow.html" target="_blank">interactive simulation</a> animates the full request path through this architecture — 10 concurrent clients, day/night MIG reconfiguration, QoS preemption, and Datadog observability. This section explains what each animated element represents and where the simulation simplifies reality.
+      </p>
+
+      <h3>What each element represents</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Element</th><th>What it shows</th><th>Actual mechanism</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Moving packet (ball)</strong></td>
+              <td>One client request in flight</td>
+              <td>HTTP/gRPC call to OCP ClusterIP Service; K8s routes to pod owning the matching MIG slice UUID</td>
+            </tr>
+            <tr>
+              <td><strong>Packet exits client box at y≈300–320</strong></td>
+              <td>All packets originate from the two visible arrows</td>
+              <td>Client dot glow identifies which of the 10 clients fired; packet travels the route that matches its type. The dot position is visual shorthand — in reality every client connects to the same Service endpoint.</td>
+            </tr>
+            <tr>
+              <td><strong>Packet through Turnstone (LLM-lg + Batch)</strong></td>
+              <td>Request routed via agent orchestration layer</td>
+              <td>
+                <em>LLM-lg:</em> Turnstone runs a multi-step loop — RAG lookup (MCP tool call) → Mistral 22B completion → optional synthesis pass. Client sees one response.<br>
+                <em>Batch:</em> Turnstone chains two model calls — Whisper on 1g.10gb for transcription, then LLM 8B or 22B for summarization/extraction. The diagram shows one packet; reality has two sequential model invocations.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Packet direct to OCP (Audio + LLM-sm)</strong></td>
+              <td>Single-model call, no orchestration</td>
+              <td>Client hits the ClusterIP Service directly. K8s routes to the pod holding the appropriate MIG slice. No agent loop needed for simple transcription or single-turn LLM completions.</td>
+            </tr>
+            <tr>
+              <td><strong>Utilization bar fills on Triton pod</strong></td>
+              <td>Concurrent request count vs. max for that slice</td>
+              <td>Real concurrency is bounded by VRAM and the vLLM/Triton max-batch setting, not a simple count. The bar is a proxy for saturation pressure.</td>
+            </tr>
+            <tr>
+              <td><strong>P3 preemption flash</strong></td>
+              <td>Batch request cancelled to free the 3g.40gb slice</td>
+              <td>K8s PriorityClass preemption evicts the Batch pod and reschedules it once the P2 request completes. In-flight requests to that pod fail; clients must retry.</td>
+            </tr>
+            <tr>
+              <td><strong>Day/night reconfiguration overlay</strong></td>
+              <td>MIG Manager repartitioning the A100</td>
+              <td>MIG Manager drains all pods on the GPU node, runs <code>nvidia-smi mig</code> commands to destroy and re-create slices, then restarts the device plugin. All in-flight requests to that node fail during the 2–5 min window.</td>
+            </tr>
+            <tr>
+              <td><strong>Datadog Agent → Datadog cloud</strong></td>
+              <td>GPU telemetry pipeline</td>
+              <td>Datadog Agent DaemonSet on the GPU node collects per-MIG-slice metrics via NVML/DCGM and ships them to Datadog. Monitors + alerts replace PrometheusRule CRs. Requires Agent ≥ 7.40 for MIG-aware tagging.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Caveats — what the simulation omits or simplifies</h3>
+      <ul>
+        <li><strong>Batch is shown as one packet, but is two model calls.</strong> A real batch pipeline routes Whisper (audio → text) and then the LLM (text → summary) as two sequential requests. The diagram shows one packet to keep the animation readable.</li>
+        <li><strong>Turnstone dwell time not shown.</strong> Packets transit Turnstone nearly instantaneously in the animation. In reality the orchestration layer adds latency for context assembly, tool call round-trips, and inter-model hops — commonly 200 ms–2 s depending on tool count and MCP server latency.</li>
+        <li><strong>Concurrency model is simplified.</strong> The simulation caps each slice at max=1 or max=2 for visual clarity. Real Triton/vLLM instances support dynamic batching; actual saturation depends on request size, sequence length, and KV-cache pressure — not just count.</li>
+        <li><strong>Preemption is instantaneous in the simulation.</strong> Real K8s preemption involves a graceful termination period (default 30 s), pod eviction, and rescheduling. Affected clients must handle 5xx errors and retry.</li>
+        <li><strong>MIG reconfiguration window is 2.5 s in the sim.</strong> Production reconfiguration takes 2–5 minutes: pod drain, slice destroy/create, device plugin restart, new pod scheduling. Plan maintenance windows accordingly.</li>
+        <li><strong>No network latency, no KV-cache state.</strong> The animation treats all hops as instant. Real token-streaming latency, KV-cache warm-up on first request, and network RTT between services are not represented.</li>
+        <li><strong>Turnstone is optional.</strong> If workloads are simple single-turn completions with no tool use, clients hit OCP Service directly. The Audio (P1) and LLM-sm (P2) clients in the simulation already show this bypass pattern.</li>
+      </ul>
     </section>
 
     <!-- STACK -->
