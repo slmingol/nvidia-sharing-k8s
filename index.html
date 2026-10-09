@@ -761,6 +761,7 @@
       <li><a href="#vram-isolation">VRAM Isolation Landscape</a></li>
       <li><a href="#triton">Triton vs. vLLM</a></li>
       <li><a href="#turnstone">Agent Orchestration</a></li>
+      <li><a href="#llmd">llm-d: Alt LLM Routing</a></li>
       <li><a href="#simulation">Live Simulation</a></li>
       <li><a href="#stack">6 — Recommended Stack</a></li>
       <li><a href="#vms">7 — VMs: Boon or Bust?</a>
@@ -2116,6 +2117,101 @@ CUDA_MPS_PINNED_DEVICE_MEM_LIMIT="0=4096m" python inference.py</pre>
       <div class="caveat" style="margin-top:12px">
         <strong>Turnstone is orchestration, not isolation</strong>
         Routing different agent steps to different Triton pods is a scheduling choice, not a security boundary. VRAM isolation is still provided by MIG at the hardware layer — Turnstone sits above all of that and has no visibility into GPU resource allocation.
+      </div>
+    </section>
+
+    <!-- LLM-D -->
+    <section class="section" id="llmd">
+      <h2><span class="sec-num">—</span> Alternative: llm-d + Dual A100</h2>
+      <p>
+        <a href="https://github.com/llm-d/llm-d" target="_blank" rel="noopener">llm-d</a> is a Kubernetes-native LLM inference routing layer, co-developed by Red Hat and Google, built on the <a href="https://gateway-api-inference-extension.sigs.k8s.io/" target="_blank" rel="noopener">Gateway API Inference Extension</a> (KEP-4804, targeting GA in K8s 1.33+). It adds KV-cache-aware load balancing and InferencePool semantics on top of plain vLLM pods — no Triton, no Turnstone, no custom routing code.
+      </p>
+      <p>
+        As a major llm-d contributor, Red Hat ships it as a supported component on OCP. If you are already on OCP and want a Red Hat-supported LLM routing layer, this is the path to evaluate alongside the Triton + Turnstone approach.
+      </p>
+
+      <h3>Reference architecture — dual A100-80GB</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>GPU</th><th>MIG profile</th><th>Slices → pods</th><th>Workload</th></tr></thead>
+          <tbody>
+            <tr><td>A100 #0</td><td><code>1g+1g+2g+2g</code></td><td>2× 1g.10gb → 2 Triton pods</td><td>Whisper v3 ASR (gRPC, plain OCP Service)</td></tr>
+            <tr><td>A100 #0</td><td><code>1g+1g+2g+2g</code></td><td>2× 2g.20gb → 2 vLLM pods</td><td>Llama-3 8B · Pool <code>llm-small</code></td></tr>
+            <tr><td>A100 #1</td><td><code>3g+3g</code></td><td>2× 3g.40gb → 2 vLLM pods</td><td>Mistral 22B · Pool <code>llm-large</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:8px;font-size:13px;color:var(--fg-muted)">Audio bypasses llm-d entirely — it routes gRPC directly to the Whisper OCP Service. LLM traffic hits the llm-d Gateway, which routes by model name to the appropriate InferencePool.</p>
+
+      <h3>llm-d request path</h3>
+      <div class="stack-block">
+Client  <span class="tree-arrow">→</span> <span class="tree-key">llm-d Gateway</span>  (Envoy · <code>POST /v1/chat/completions</code>, model field read)
+          <span class="tree-arrow">↓</span> <span class="tree-key">Endpoint Picker</span>  (extension: KV-cache-aware replica selection)
+          <span class="tree-arrow">↓</span> <span class="tree-key">InferencePool</span>  (<code>llm-small</code>: 2× vLLM 8B  |  <code>llm-large</code>: 2× vLLM 22B)
+          <span class="tree-arrow">↓</span> <span class="tree-key">vLLM pod</span>  (one per MIG slice, typed resource request)</div>
+
+      <h3>Key components</h3>
+      <ul>
+        <li><strong>InferencePool</strong> — a K8s CRD grouping replicas that serve the same model. Replaces a plain Service for LLM traffic; exposes replica-level metadata (KV-cache fill, queue depth) to the endpoint picker.</li>
+        <li><strong>InferenceModel</strong> — maps a model name (e.g. <code>mistral-22b</code>) to an InferencePool, with criticality tiers (critical / sheddable). The Gateway reads this to route without client-side logic.</li>
+        <li><strong>Endpoint Picker (ext-proc)</strong> — an Envoy external processor that receives each request, queries live replica stats, and returns the best backend. Default picker: lowest KV-cache utilization. Pluggable via the picker API.</li>
+        <li><strong>Gateway</strong> — standard Envoy Proxy (OCP's Gateway API implementation), extended with the ext-proc filter. No custom proxy fork needed.</li>
+      </ul>
+
+      <h3>llm-d vs. Turnstone — what each layer solves</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Concern</th><th>llm-d</th><th>Turnstone</th></tr></thead>
+          <tbody>
+            <tr><td>LLM replica selection</td><td>KV-cache-aware, per-request routing across vLLM replicas</td><td>Routes to one pod per model tier; no replica-level awareness</td></tr>
+            <tr><td>Multi-step agent loops</td><td>Not in scope — single-request routing only</td><td>Core purpose: RAG, tool calls, multi-model chaining</td></tr>
+            <tr><td>Model protocol</td><td>OpenAI API passthrough</td><td>OpenAI-compatible, MCP tool dispatch</td></tr>
+            <tr><td>Audio / non-LLM</td><td>Out of scope; Whisper bypasses llm-d</td><td>Chains Whisper → LLM in one agent loop</td></tr>
+            <tr><td>OCP / RH support</td><td>Red Hat co-author, OCP-native Gateway API</td><td>Community OSS, no OCP-specific support</td></tr>
+            <tr><td>Maturity</td><td>KEP-4804 targeting GA in K8s 1.33+; pre-GA today</td><td>Stable release, active development</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:8px;font-size:13px;color:var(--fg-muted)">These are not mutually exclusive. llm-d handles replica selection beneath the LLM endpoint; Turnstone handles orchestration above it. You could run Turnstone pointing at the llm-d Gateway and get both KV-cache routing and agent orchestration.</p>
+
+      <h3>llm-d quick-start on OCP</h3>
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">bash — install llm-d operator via Helm (OCP)</span><button class="copy-btn" data-target="llmd-install">Copy</button></div>
+        <pre id="llmd-install">helm repo add llm-d https://llm-d.ai/helm-charts
+helm repo update
+
+helm install llm-d-operator llm-d/llm-d-operator \
+  --namespace llm-d-system \
+  --create-namespace</pre>
+      </div>
+
+      <div class="code-wrap">
+        <div class="code-bar"><span class="code-lang">yaml — InferencePool + InferenceModel for llm-small</span><button class="copy-btn" data-target="llmd-crds">Copy</button></div>
+        <pre id="llmd-crds">apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferencePool
+metadata:
+  name: llm-small
+spec:
+  targetPortNumber: 8000
+  selector:
+    app: vllm-llama3-8b
+  extensionRef:
+    name: llm-d-epp   # endpoint picker deployment
+---
+apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferenceModel
+metadata:
+  name: llama3-8b
+spec:
+  modelName: llama3-8b
+  criticality: Critical
+  poolRef:
+    name: llm-small</pre>
+      </div>
+
+      <div class="caveat">
+        <strong>Pre-GA caveat</strong>
+        Gateway API Inference Extension (KEP-4804) is alpha/beta today. API shapes may change before K8s 1.33 GA. Evaluate against your OCP version's Gateway API support level before committing production workloads. Red Hat's OCP AI reference architecture docs are the authoritative source for supported versions.
       </div>
     </section>
 
